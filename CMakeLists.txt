@@ -9,11 +9,6 @@ add_definitions(-DPROJECT_DIR="${PROJECT_SOURCE_DIR}")
 find_package(Eigen3 REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-# OpenCV
-find_package(OpenCV REQUIRED)
-include_directories(${OPENCV_INCLUDE_DIR})
-link_directories(${OpenCV_LIB_DIR})
-
 # PCL
 find_package(PCL 1.2 REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})

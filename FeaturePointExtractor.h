@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <opencv2/opencv.hpp>
 #include <pcl/common/common.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include "Sensor.h"
@@ -58,7 +57,6 @@ public:
 
         while (not viewer.wasStopped()) {
             viewer.spinOnce();
-            cv::waitKey(1);
         }
     }
 
@@ -90,7 +88,6 @@ private:
 
         while (not viewer.wasStopped()) {
             viewer.spinOnce();
-            cv::waitKey(1);
         }
     }
 
