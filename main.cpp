@@ -77,7 +77,7 @@ void onKeyboardEvent(const pcl::visualization::KeyboardEvent &event, void *) {
         activeCloud = (activeCloud + 1) % clouds.size();
         viewer.removeAllPointClouds(0);
         viewer.addPointCloud(clouds[activeCloud]);
-        viewer.addPointCloud(sensor.m_cloud, "inputCloud");
+        //viewer.addPointCloud(sensor.m_cloud, "inputCloud");
     }
 }
 
@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
 
     // load face model
     const unsigned int nVertices = 53490;
-    //const unsigned int nExpr = 76;
+    const unsigned int nExpr = 76;
     const unsigned int nEigenVec = 160;
 
     std::string filenameBaseModel = "../data/MorphableModel/";
@@ -118,11 +118,20 @@ int main(int argc, char **argv) {
         shapeBasis.block(3 * i, 0, 3, nEigenVec) = shapeBasisVec4.block(4 * i, 0, 3, nEigenVec);
     }
 
-    // not needed yet
-    /*
     auto expressionBasisRaw = new float[4 * nVertices * nExpr];
     LoadVector(filenameBasisExpression, expressionBasisRaw, 4 * nVertices * nExpr);
 
+    // convert to matrix
+    Eigen::Map<Eigen::MatrixXf> expressionBasisVec4(expressionBasisRaw, 4 * nVertices, nExpr);
+
+    // discard 4th vertex coordinate
+    Eigen::MatrixXf expressionBasis(3 * nVertices, nExpr);
+    for (int i = 0; i < nVertices; i++) {
+        expressionBasis.block(3 * i, 0, 3, nExpr) = expressionBasisVec4.block(4 * i, 0, 3, nExpr);
+    }
+
+    // not needed yet
+    /*
     auto shapeDevRaw = new float[nEigenVec];
     LoadVector(filenameStdDevShape, shapeDevRaw, nEigenVec);
 
@@ -135,17 +144,24 @@ int main(int argc, char **argv) {
 
     // init normal distribution
     std::default_random_engine generator;
-    std::normal_distribution<float> distribution(0.0f, 0.02f);
+    std::normal_distribution<float> distributionAlpha(0.0f, 0.02f);
+    std::normal_distribution<float> distributionTheta(0.0f, 0.1f);
 
     for (int i = 0; i < 10; i++) {
         // generate alpha
         Eigen::VectorXf alpha(nEigenVec);
         for (int a = 0; a < nEigenVec; a++) {
-            alpha(a) = distribution(generator);
+            alpha(a) = distributionAlpha(generator);
+        }
+
+        // generate theta
+        Eigen::VectorXf theta(nExpr);
+        for (int t = 0; t < nExpr; t++) {
+            theta(t) = distributionTheta(generator);
         }
 
         // calculate face
-        const Eigen::VectorXf interpolatedShape(averageShape + shapeBasis * alpha);
+        const Eigen::VectorXf interpolatedShape(averageShape + shapeBasis * alpha + expressionBasis * theta);
 
         // init point cloud
         pcl::PointXYZRGB tpl;
