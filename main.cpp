@@ -3,6 +3,7 @@
 #include <iostream>
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
+#include <pcl/filters/crop_box.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <random>
 #include <sstream>
@@ -155,15 +156,35 @@ int main(int argc, char **argv) {
     // load input feature points
     FeaturePointExtractor inputFeatureExtractor(filenamePcdFeaturePoints, sensor.m_cloud);
 
-    // render input cloud
-    viewer.addPointCloud<pcl::PointXYZRGB>(sensor.m_cloud, "inputCloud");
-    highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputCloudFeatures");
 
     // transform average mesh using procrustes
     ProcrustesAligner pa;
     Eigen::Matrix4f pose = pa.estimatePose(averageFeatureExtractor.m_points, inputFeatureExtractor.m_points);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
     pcl::transformPointCloud(*averageShapeCloud, *transformedCloud, pose);
+
+    // remove non-face points
+    Eigen::Vector4f min;
+    Eigen::Vector4f max;
+    pcl::getMinMax3D(*transformedCloud, min, max);
+
+    Eigen::Vector4f size = max - min;
+    min = min - size / 2;
+    max = max + size / 2;
+    min.w() = 1;
+    max.w() = 1;
+
+    pcl::CropBox<pcl::PointXYZRGB> boxFilter;
+    boxFilter.setMin(min);
+    boxFilter.setMax(max);
+    boxFilter.setInputCloud(sensor.m_cloud);
+    pcl::PointCloud<pcl::PointXYZRGB> out;
+    boxFilter.filter(out);
+    sensor.m_cloud = out.makeShared();
+
+    // render input cloud
+    viewer.addPointCloud<pcl::PointXYZRGB>(sensor.m_cloud, "inputCloud");
+    highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputCloudFeatures");
 
     // render transformed average mesh
     viewer.addPointCloud<pcl::PointXYZRGB>(transformedCloud, "inputTransformedCloud");
