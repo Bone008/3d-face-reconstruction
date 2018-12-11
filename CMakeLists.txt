@@ -17,7 +17,7 @@ add_definitions(${PCL_DEFINITIONS})
 
 # Set files to be compiled
 set(HEADER_FILES
-        VirtualSensor.h FeaturePointExtractor.h Sensor.h)
+        VirtualSensor.h FeaturePointExtractor.h ProcrustesAligner.h Sensor.h)
 set(SOURCE_FILES 
 )
 

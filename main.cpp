@@ -2,17 +2,16 @@
 #include <fstream>
 #include <iostream>
 #include <pcl/common/common.h>
+#include <pcl/common/transforms.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <random>
 #include <sstream>
 #include "FeaturePointExtractor.h"
+#include "ProcrustesAligner.h"
 #include "Sensor.h"
 #include "VirtualSensor.h"
 
-int activeCloud = 0;
-std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> clouds;
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
-Sensor sensor;
 
 const Eigen::VectorXf LoadOFF(std::string &filename) {
     std::ifstream in(filename, std::ifstream::in);
@@ -57,53 +56,64 @@ void LoadVector(const std::string &filename, float *res, unsigned int length) {
     in.close();
 }
 
-// FIXME i am not used
-float *LoadEigenvectors(const std::string &filename, unsigned int components, unsigned int numberOfEigenvectors) {
-    auto *res = new float[components * numberOfEigenvectors];
+void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::vector<Eigen::Vector3f> &featurePoints,
+                            const std::string &name) {
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr points_to_highlight(new pcl::PointCloud<pcl::PointXYZRGB>);
 
-    for (unsigned int i = 0; i < numberOfEigenvectors; i++) {
-        std::stringstream ss;
-        ss << filename << i << ".vec";
-
-        LoadVector(ss.str().c_str(), &(res[components * i]), 0);
+    for (auto const &point: featurePoints) {
+        pcl::PointXYZRGB selected_point;
+        selected_point.x = point[0];
+        selected_point.y = point[1];
+        selected_point.z = point[2];
+        selected_point.r = 255;
+        selected_point.g = 0;
+        selected_point.b = 0;
+        points_to_highlight->points.push_back(selected_point);
     }
 
-    return res;
+    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> red(points_to_highlight);
+    viewer.addPointCloud<pcl::PointXYZRGB>(points_to_highlight, red, name);
+    viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 10, name);
 }
 
-void onKeyboardEvent(const pcl::visualization::KeyboardEvent &event, void *) {
-    if (event.getKeyCode() == 't' && event.keyDown()) {
-        // show next point cloud
-        activeCloud = (activeCloud + 1) % clouds.size();
-        viewer.removeAllPointClouds(0);
-        viewer.addPointCloud(clouds[activeCloud]);
-        //viewer.addPointCloud(sensor.m_cloud, "inputCloud");
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointsToCloud(const Eigen::VectorXf &points) {
+    const int nVertices = points.rows() / 3;
+    pcl::PointXYZRGB tpl;
+    tpl.r = tpl.g = tpl.b = 255;
+    pcl::PointCloud<pcl::PointXYZRGB> cloud(nVertices, 1, tpl);
+    for (int p = 0; p < nVertices; p++) {
+        cloud.points[p].x = points(3 * p + 0);
+        cloud.points[p].y = points(3 * p + 1);
+        cloud.points[p].z = points(3 * p + 2);
     }
+    return cloud.makeShared();
 }
 
 int main(int argc, char **argv) {
     // filenames
-    std::string filenameBase = "../data/rgbd_face_dataset/"; // TODO maybe change
+    std::string filenameBase = "../data/rgbd_face_dataset/";
     std::string filenamePcd = filenameBase + "006_00_cloud.pcd";
-    std::string filenameIndices = filenameBase + "006_00_features.points";
+    std::string filenamePcdFeaturePoints = filenameBase + "006_00_features.points";
 
-    // load point cloud
-    sensor = VirtualSensor(filenamePcd);
+    std::string filenameBaseModel = "../data/MorphableModel/";
+    std::string filenameAverageMesh = filenameBaseModel + "averageMesh.off";
+    std::string filenameAverageMeshFeaturePoints = filenameBaseModel + "averageMesh_features.points";
+    std::string filenameBasisShape = filenameBaseModel + "ShapeBasis.matrix";
+    std::string filenameBasisExpression = filenameBaseModel + "ExpressionBasis.matrix";
+    std::string filenameStdDevShape = filenameBaseModel + "StandardDeviationShape.vec";
+    std::string filenameStdDevExpression = filenameBaseModel + "StandardDeviationExpression.vec";
 
-    // load feature points
-    //FeaturePointExtractor extractor(filenameIndices, sensor);
+    // load average shape
+    const Eigen::VectorXf averageShape = LoadOFF(filenameAverageMesh) / 1000000.0f;
+
+    // load average shape feature points
+    auto averageShapeCloud = pointsToCloud(averageShape);
+    FeaturePointExtractor averageFeatureExtractor(filenameAverageMeshFeaturePoints, averageShapeCloud);
 
     // load face model
     const unsigned int nVertices = 53490;
     const unsigned int nExpr = 76;
     const unsigned int nEigenVec = 160;
-
-    std::string filenameBaseModel = "../data/MorphableModel/";
-    std::string filenameAverageMesh = filenameBaseModel + "averageMesh.off";
-    std::string filenameBasisShape = filenameBaseModel + "ShapeBasis.matrix";
-    std::string filenameBasisExpression = filenameBaseModel + "ExpressionBasis.matrix";
-    std::string filenameStdDevShape = filenameBaseModel + "StandardDeviationShape.vec";
-    std::string filenameStdDevExpression = filenameBaseModel + "StandardDeviationExpression.vec";
 
     // load shape basis
     auto shapeBasisRaw = new float[4 * nVertices * nEigenVec];
@@ -139,52 +149,28 @@ int main(int argc, char **argv) {
     LoadVector(filenameStdDevExpression, expressionDevRaw, nExpr);
     */
 
-    // load average shape
-    const Eigen::VectorXf averageShape = LoadOFF(filenameAverageMesh) / 1000000.0f;
+    // load input point cloud
+    Sensor sensor = VirtualSensor(filenamePcd);
 
-    // init normal distribution
-    std::default_random_engine generator;
-    std::normal_distribution<float> distributionAlpha(0.0f, 0.02f);
-    std::normal_distribution<float> distributionTheta(0.0f, 0.1f);
+    // load input feature points
+    FeaturePointExtractor inputFeatureExtractor(filenamePcdFeaturePoints, sensor.m_cloud);
 
-    for (int i = 0; i < 10; i++) {
-        // generate alpha
-        Eigen::VectorXf alpha(nEigenVec);
-        for (int a = 0; a < nEigenVec; a++) {
-            alpha(a) = distributionAlpha(generator);
-        }
+    // render input cloud
+    viewer.addPointCloud<pcl::PointXYZRGB>(sensor.m_cloud, "inputCloud");
+    highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputCloudFeatures");
 
-        // generate theta
-        Eigen::VectorXf theta(nExpr);
-        for (int t = 0; t < nExpr; t++) {
-            theta(t) = distributionTheta(generator);
-        }
+    // transform average mesh using procrustes
+    ProcrustesAligner pa;
+    Eigen::Matrix4f pose = pa.estimatePose(averageFeatureExtractor.m_points, inputFeatureExtractor.m_points);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+    pcl::transformPointCloud(*averageShapeCloud, *transformedCloud, pose);
 
-        // calculate face
-        const Eigen::VectorXf interpolatedShape(averageShape + shapeBasis * alpha + expressionBasis * theta);
+    // render transformed average mesh
+    viewer.addPointCloud<pcl::PointXYZRGB>(transformedCloud, "inputTransformedCloud");
+    highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputTransformedCloudFeatures");
 
-        // init point cloud
-        pcl::PointXYZRGB tpl;
-        tpl.r = tpl.g = tpl.b = 255;
-        pcl::PointCloud<pcl::PointXYZRGB> cloud(nVertices, 1, tpl);
-        for (int p = 0; p < nVertices; p++) {
-            cloud.points[p].x = interpolatedShape(3 * p + 0);
-            cloud.points[p].y = interpolatedShape(3 * p + 1);
-            cloud.points[p].z = interpolatedShape(3 * p + 2);
-        }
-
-        // store point cloud
-        auto cloudptr = cloud.makeShared();
-        clouds.push_back(cloudptr);
-    }
-
-    viewer.setCameraPosition(0, 0, -0.5, 0, 1, 0);
-    viewer.registerKeyboardCallback(onKeyboardEvent);
-    viewer.addPointCloud<pcl::PointXYZRGB>(clouds[0]);
-
-    while (not viewer.wasStopped()) {
-        viewer.spinOnce(500);
-    }
+    viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
+    viewer.spin();
 
     return 0;
 }
