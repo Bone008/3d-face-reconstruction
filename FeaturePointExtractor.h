@@ -51,7 +51,7 @@ private:
         viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
         viewer.registerPointPickingCallback(FeaturePointExtractor::pointPickingHandler);
 
-        while (not viewer.wasStopped()) {
+        while (!viewer.wasStopped()) {
             viewer.spinOnce(500);
         }
     }
