@@ -344,3 +344,8 @@ cmake-build-debug/
 # input dataset
 data/rgbd_face_dataset/*
 !data/rgbd_face_dataset/.gitkeep
+data/MorphableModel/*
+!data/MorphableModel/.gitkeep
+
+cmake_out/
+libs/
