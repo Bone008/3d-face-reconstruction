@@ -15,6 +15,9 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
+find_package(Ceres REQUIRED)
+include_directories(${CERES_INCLUDE_DIRS})
+
 # Set files to be compiled
 set(HEADER_FILES
         VirtualSensor.h FeaturePointExtractor.h ProcrustesAligner.h Sensor.h)
@@ -22,4 +25,4 @@ set(SOURCE_FILES
 )
 
 add_executable(face_reconstruction main.cpp ${HEADER_FILES} ${SOURCE_FILES})
-target_link_libraries(face_reconstruction ${PCL_LIBRARIES})
+target_link_libraries(face_reconstruction ${PCL_LIBRARIES} ${CERES_LIBRARIES})

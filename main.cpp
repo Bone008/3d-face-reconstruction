@@ -11,6 +11,13 @@
 #include "ProcrustesAligner.h"
 #include "Sensor.h"
 #include "VirtualSensor.h"
+#include <pcl/range_image/range_image.h>
+#include <pcl/visualization/common/float_image_utils.h>
+#include <pcl/io/png_io.h>
+#include "ceres/ceres.h"
+#include <pcl/registration/icp.h>
+#include <pcl/kdtree/kdtree_flann.h>
+
 
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
@@ -90,6 +97,31 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointsToCloud(const Eigen::VectorXf &poin
     return cloud.makeShared();
 }
 
+struct ExponentialResidual {
+    // x is the source (average mesh), y is the target (input cloud)
+    ExponentialResidual(float x, float y, int nEigenVec, Eigen::MatrixXf &base, int i)
+            : x_(x), y_(y), nEigenVec_(nEigenVec), base_(base), i_(i) {}
+
+    template <typename T>
+    bool operator()(T const* alpha, T* residual) const {
+        // solve 0 = target - (source + base * alpha)
+        T baseTimesAlpha = T(0);
+        for (int e = 0; e < nEigenVec_; e++) {
+            baseTimesAlpha += T(base_(i_, e)) * alpha[e];
+        }
+
+        residual[0] = T(y_) - (T(x_) + baseTimesAlpha);
+        return true;
+    }
+
+private:
+    const float x_;
+    const float y_;
+    const int nEigenVec_;
+    const Eigen::MatrixXf& base_;
+    const int i_;
+};
+
 int main(int argc, char **argv) {
     // filenames
     std::string filenameBase = "../data/rgbd_face_dataset/";
@@ -152,21 +184,22 @@ int main(int argc, char **argv) {
 
     // load input point cloud
     Sensor sensor = VirtualSensor(filenamePcd);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr inputCloud = sensor.m_cloud;
 
     // load input feature points
-    FeaturePointExtractor inputFeatureExtractor(filenamePcdFeaturePoints, sensor.m_cloud);
-
+    FeaturePointExtractor inputFeatureExtractor(filenamePcdFeaturePoints, inputCloud);
 
     // transform average mesh using procrustes
     ProcrustesAligner pa;
-    Eigen::Matrix4f pose = pa.estimatePose(averageFeatureExtractor.m_points, inputFeatureExtractor.m_points);
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-    pcl::transformPointCloud(*averageShapeCloud, *transformedCloud, pose);
+    Eigen::Matrix4f pose = pa.estimatePose(inputFeatureExtractor.m_points, averageFeatureExtractor.m_points);
+    pcl::PointCloud<pcl::PointXYZRGB> tmp;
+    pcl::transformPointCloud(*inputCloud, tmp, pose);
+    inputCloud = tmp.makeShared();
 
     // remove non-face points
     Eigen::Vector4f min;
     Eigen::Vector4f max;
-    pcl::getMinMax3D(*transformedCloud, min, max);
+    pcl::getMinMax3D(*averageShapeCloud, min, max);
 
     Eigen::Vector4f size = max - min;
     min = min - size / 2;
@@ -177,20 +210,129 @@ int main(int argc, char **argv) {
     pcl::CropBox<pcl::PointXYZRGB> boxFilter;
     boxFilter.setMin(min);
     boxFilter.setMax(max);
-    boxFilter.setInputCloud(sensor.m_cloud);
+    boxFilter.setInputCloud(inputCloud);
     pcl::PointCloud<pcl::PointXYZRGB> out;
     boxFilter.filter(out);
-    sensor.m_cloud = out.makeShared();
+    inputCloud = out.makeShared();
 
-    // render input cloud
-    viewer.addPointCloud<pcl::PointXYZRGB>(sensor.m_cloud, "inputCloud");
-    highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputCloudFeatures");
+    // icp
+    pcl::PointCloud<pcl::PointXYZRGB> out2;
+    pcl::IterativeClosestPoint<pcl::PointXYZRGB, pcl::PointXYZRGB> icp;
+    icp.setInputSource(inputCloud);
+    icp.setInputTarget(averageShapeCloud);
+    icp.setMaxCorrespondenceDistance (0.01); // TODO tweak
+    icp.setTransformationEpsilon (1e-8);// TODO tweak
+    //icp.setEuclideanFitnessEpsilon (1); // TODO tweak
+    icp.align(out2);
+    inputCloud = out2.makeShared();
+
+    // init alpha to 0
+    double alpha[nEigenVec];
+    for (int i = 0; i < nEigenVec; i++) {
+        alpha[i] = 0;
+    }
+
+    // improve alpha 5 times
+    for (int steps = 0; steps < 5; steps++) {
+
+        // knn search using flann:
+        // for every basel vertex, find closest vertex in input pcl
+        pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
+        kdtree.setInputCloud(inputCloud);
+
+        std::vector<int> pointID(1);
+        std::vector<float> pointSqDist(1);
+
+        std::vector<float> targetPositions;
+        std::vector<float> sourcePositions;
+        for (int i = 0; i < nVertices; i++) {
+            kdtree.nearestKSearch(averageShapeCloud->points[i], 1, pointID, pointSqDist);
+            pcl::PointXYZRGB t = inputCloud->points[pointID[0]];
+            pcl::PointXYZRGB s = averageShapeCloud->points[i];
+
+            // TODO check distance between t and s, maybe normal angles?
+            if (pcl::squaredEuclideanDistance(t, s) > 0.01f)
+                continue;
+
+            targetPositions.push_back(t.x);
+            targetPositions.push_back(t.y);
+            targetPositions.push_back(t.z);
+            sourcePositions.push_back(s.x);
+            sourcePositions.push_back(s.y);
+            sourcePositions.push_back(s.z);
+        }
+
+        std::cout << "knn search done (1)" << std::endl;
+
+        // knn search using flann:
+        // for every input pcl vertex, find closest basel vertex
+        pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree2;
+        kdtree2.setInputCloud(averageShapeCloud);
+
+        for (int i = 0; i < inputCloud->width * inputCloud->height; i++) {
+            kdtree2.nearestKSearch(inputCloud->points[i], 1, pointID, pointSqDist);
+            pcl::PointXYZRGB t = averageShapeCloud->points[pointID[0]];
+            pcl::PointXYZRGB s = inputCloud->points[i];
+
+            // TODO check distance between t and s, maybe normal angles?
+            if (pcl::squaredEuclideanDistance(t, s) > 0.01f)
+                continue;
+
+            targetPositions.push_back(t.x);
+            targetPositions.push_back(t.y);
+            targetPositions.push_back(t.z);
+            sourcePositions.push_back(s.x);
+            sourcePositions.push_back(s.y);
+            sourcePositions.push_back(s.z);
+        }
+
+        std::cout << "knn search done (2)" << std::endl;
+
+        // solve 0 = target - (source + base * alpha)
+        ceres::Problem problem;
+
+        for (int i = 0; i < 3 * nVertices; i++) {
+            ceres::CostFunction *cost_function =
+                    new ceres::AutoDiffCostFunction<ExponentialResidual, 1, nEigenVec>(
+                            new ExponentialResidual(sourcePositions[i], targetPositions[i], nEigenVec, shapeBasis, i));
+            problem.AddResidualBlock(cost_function, NULL, alpha);
+        }
+
+        ceres::Solver::Options options;
+        options.linear_solver_type = ceres::DENSE_QR;
+        options.minimizer_progress_to_stdout = true;
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+
+        std::cout << summary.BriefReport() << std::endl;
+
+        Eigen::VectorXf alphaVec(nEigenVec);
+        for (int i = 0; i < nEigenVec; i++) {
+            alphaVec(i) = alpha[i];
+        }
+        const Eigen::VectorXf interpolatedShape(averageShape + shapeBasis * alphaVec);
+
+        // modify point cloud
+        averageShapeCloud = pointsToCloud(interpolatedShape);
+    }
 
     // render transformed average mesh
-    viewer.addPointCloud<pcl::PointXYZRGB>(transformedCloud, "inputTransformedCloud");
-    highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputTransformedCloudFeatures");
+    viewer.addPointCloud<pcl::PointXYZRGB>(averageShapeCloud, "inputTransformedCloud2");
 
-    viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
+
+    // render input cloud
+    viewer.addPointCloud<pcl::PointXYZRGB>(inputCloud, "inputCloud");
+
+
+    //highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputCloudFeatures");
+
+
+    // render transformed average mesh
+    //viewer.addPointCloud<pcl::PointXYZRGB>(transformedCloud, "inputTransformedCloud");
+    //highlightFeaturePoints(sensor.m_cloud, inputFeatureExtractor.m_points, "inputTransformedCloudFeatures");
+
+
+    viewer.setCameraPosition(0, 0, -1.5, 0, 0, 0);
     viewer.spin();
 
     return 0;
