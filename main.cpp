@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#include "FaceModel.h"
+#include "CoarseAlignment.h"
+#include "Optimizer.h"
 
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
@@ -162,4 +165,25 @@ int main(int argc, char **argv) {
     viewer.spin();
 
     return 0;
+}
+
+const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
+const std::string inputFacePcd = inputFaceBaseDir + "006_00_cloud.pcd";
+const std::string baseModelDir = "../data/MorphableModel/";
+
+int new_main(int argc, char **argv) {
+	FaceModel model(baseModelDir);
+	Sensor inputSensor = VirtualSensor(inputFacePcd);
+	Matrix4f pose = compute_coarse_alignment(model, inputSensor.m_cloud);
+
+	FaceParameters params = optimize_parameters(model, pose, inputSensor);
+
+	auto finalFaceCloud = model.computeShape(params);
+	viewer.addPointCloud(finalFaceCloud);
+
+	while (!viewer.wasStopped()) {
+		// react to input to modify params and call viewer.updatePointCloud(...)
+		viewer.spinOnce(500);
+	}
+	return 0;
 }

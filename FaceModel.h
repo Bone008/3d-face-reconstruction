@@ -9,7 +9,6 @@ class FaceModel
 {
 public:
 	FaceModel(const std::string& baseDir);
-	~FaceModel();
 
 	Eigen::VectorXf m_averageShape;
 	Eigen::MatrixXf m_shapeBasis;
