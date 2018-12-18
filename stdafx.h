@@ -1,0 +1,13 @@
+#pragma once
+#include <Eigen/Eigen>
+#include <fstream>
+#include <iostream>
+#include <pcl/common/common.h>
+#include <pcl/common/transforms.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <random>
+#include <sstream>
+#include "FeaturePointExtractor.h"
+#include "ProcrustesAligner.h"
+#include "Sensor.h"
+#include "VirtualSensor.h"
