@@ -30,7 +30,6 @@ set(SOURCE_FILES
 		FaceModel.cpp
 		Optimizer.cpp
 		main.cpp
-		stdafx.cpp
 )
 
 if (MSVC)
@@ -38,6 +37,8 @@ if (MSVC)
     # Set 
     # "Precompiled Header" to "Use (/Yu)"
     # "Precompiled Header File" to "stdafx.h"
+    set (SOURCE_FILES ${SOURCE_FILES} stdafx.cpp)
+
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Yustdafx.h /FIstdafx.h")
 	set_source_files_properties(stdafx.cpp
 	    PROPERTIES
