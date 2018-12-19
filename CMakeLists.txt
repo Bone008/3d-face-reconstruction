@@ -15,6 +15,14 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
+if (MSVC)
+    # For precompiled header.
+    # Set 
+    # "Precompiled Header" to "Use (/Yu)"
+    # "Precompiled Header File" to "stdafx.h"
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Yustdafx.h /FIstdafx.h")
+endif()
+
 # Set files to be compiled
 set(HEADER_FILES
 		CoarseAlignment.h
