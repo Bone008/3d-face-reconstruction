@@ -29,7 +29,6 @@ set(HEADER_FILES
 		FeaturePointExtractor.h
 		ProcrustesAligner.h
 		VirtualSensor.h
-		vtk.h
 		FaceModel.h
 		Optimizer.h
 		Sensor.h)
@@ -38,7 +37,6 @@ set(SOURCE_FILES
 		FaceModel.cpp
 		Optimizer.cpp
 		main.cpp
-		vtk.cpp
 )
 
 add_executable(face_reconstruction ${HEADER_FILES} ${SOURCE_FILES})
