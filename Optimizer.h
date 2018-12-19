@@ -12,8 +12,8 @@ struct PixelData {
 	double barycentrixCoordinates[3];
 };
 
-FaceParameters optimize_parameters(FaceModel& model, const Eigen::Matrix4f& pose, const Sensor& inputSensor);
+FaceParameters optimizeParameters(FaceModel& model, const Eigen::Matrix4f& pose, const Sensor& inputSensor);
 
 // Rasterizes the entire synthetic model and computes barycentric coordinates and vertex indices for each pixel.
 // Returns info about pixels in row-major order, so pixel (x,y) is at index (y*width + x).
-std::vector<PixelData> rasterize_vertices(const double* vertices, const Eigen::MatrixX3i& triangleList, int width, int height);
+std::vector<PixelData> rasterizeVertices(const double* vertices, const Eigen::MatrixX3i& triangleList, int width, int height);

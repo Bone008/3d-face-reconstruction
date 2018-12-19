@@ -4,4 +4,4 @@
 #include <pcl/common/common.h>
 
 // returns pose
-Eigen::Matrix4f compute_coarse_alignment(const FaceModel& model, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr input);
+Eigen::Matrix4f computeCoarseAlignment(const FaceModel& model, const Sensor& inputSensor);

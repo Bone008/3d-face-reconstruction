@@ -14,7 +14,7 @@ public:
 
     std::vector<Eigen::Vector3f> m_points;
 
-    FeaturePointExtractor(const std::string &filenameIndices, pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud) {
+    FeaturePointExtractor(const std::string &filenameIndices, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud) {
         // check if 5 feature points' indices exist
         std::ifstream fileIndices(filenameIndices, std::ios::in);
 
@@ -41,7 +41,7 @@ public:
 
 private:
 
-    void manualFeaturePointSelection(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud) {
+    void manualFeaturePointSelection(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud) {
         pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
         // Draw output point cloud:

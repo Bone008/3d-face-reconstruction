@@ -1,7 +1,13 @@
 #include "stdafx.h"
 #include "CoarseAlignment.h"
 
-Eigen::Matrix4f compute_coarse_alignment(const FaceModel& model, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr input)
+Eigen::Matrix4f computeCoarseAlignment(const FaceModel& model, const Sensor& inputSensor)
 {
-	return Eigen::Matrix4f();
+	// transform average mesh using procrustes
+	ProcrustesAligner pa;
+	Matrix4f pose = pa.estimatePose(model.m_averageFeaturePoints, inputSensor.m_featurePoints);
+
+	// TODO include peter's code for ICP here.
+
+	return pose;
 }
