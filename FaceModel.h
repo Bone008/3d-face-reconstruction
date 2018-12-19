@@ -20,10 +20,12 @@ public:
 	Eigen::MatrixXf m_shapeBasis;
 	// Orthogonal basis for the expression parameters delta. Shape (3 * numVertices, numExprVec)
 	Eigen::MatrixXf m_expressionBasis;
-	
+
 
 	// Computes the vertex positions of a face based on a set of parameters.
 	Eigen::VectorXf computeShape(const FaceParameters& params);
+
+	FaceParameters computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender);
 
 	unsigned int getNumVertices() { return m_averageShape.rows() / 3; }
 	unsigned int getNumEigenVec() { return m_shapeBasis.cols(); }
