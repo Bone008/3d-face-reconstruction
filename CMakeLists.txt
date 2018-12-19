@@ -21,6 +21,7 @@ set(HEADER_FILES
 		FeaturePointExtractor.h
 		ProcrustesAligner.h
 		VirtualSensor.h
+		Mesh.h
 		FaceModel.h
 		Optimizer.h
 		Sensor.h
