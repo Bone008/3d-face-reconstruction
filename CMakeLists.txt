@@ -17,9 +17,21 @@ add_definitions(${PCL_DEFINITIONS})
 
 # Set files to be compiled
 set(HEADER_FILES
-        VirtualSensor.h FeaturePointExtractor.h ProcrustesAligner.h Sensor.h)
-set(SOURCE_FILES 
+		CoarseAlignment.h
+		FeaturePointExtractor.h
+		ProcrustesAligner.h
+		VirtualSensor.h
+		vtk.h
+		FaceModel.h
+		Optimizer.h
+		Sensor.h)
+set(SOURCE_FILES
+		CoarseAlignment.cpp
+		FaceModel.cpp
+		Optimizer.cpp
+		main.cpp
+		vtk.cpp
 )
 
-add_executable(face_reconstruction main.cpp ${HEADER_FILES} ${SOURCE_FILES})
+add_executable(face_reconstruction ${HEADER_FILES} ${SOURCE_FILES})
 target_link_libraries(face_reconstruction ${PCL_LIBRARIES})
