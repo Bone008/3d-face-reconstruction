@@ -8,11 +8,10 @@ const std::string filenameBasisExpression = "ExpressionBasis.matrix";
 const std::string filenameStdDevShape = "StandardDeviationShape.vec";
 const std::string filenameStdDevExpression = "StandardDeviationExpression.vec";
 
-FaceModel::FaceModel(const std::string& baseDir)
-{
+FaceModel::FaceModel(const std::string& baseDir) {
 	// load average shape
-	m_averageShape = loadOFF(baseDir + filenameAverageMesh);
-	m_averageShape /= 1000000.0f;
+	m_averageShapeMesh = loadOFF(baseDir + filenameAverageMesh);
+	m_averageShapeMesh.vertices /= 1000000.0f;
 	// load average shape feature points
 	FeaturePointExtractor averageFeatureExtractor(baseDir + filenameAverageMeshFeaturePoints, nullptr);
 	m_averageFeaturePoints = averageFeatureExtractor.m_points;
@@ -54,37 +53,60 @@ FaceModel::FaceModel(const std::string& baseDir)
 
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params)
 {
-	return m_averageShape + m_shapeBasis * params.alpha;
+	return m_averageShapeMesh.vertices + m_shapeBasis * params.alpha;
 }
 
 // Utility function to primitively load a file in the STOFF format.
-const Eigen::VectorXf FaceModel::loadOFF(const std::string& filename) {
+const Mesh FaceModel::loadOFF(const std::string& filename) {
 	std::ifstream in(filename, std::ifstream::in);
 	if (!in) {
 		std::cout << "ERROR:\tCan not open file: " << filename << std::endl;
 		exit(1);
 	}
 
-	std::string dummy;
-	in >> dummy; // Header, should be STOFF
-	int nVertices;
-	in >> nVertices;
-
-	Eigen::VectorXf mat(3 * nVertices);
-	float x, y, z;
 	std::string line;
+	std::getline(in, line); // Header, should be STOFF
+	std::getline(in, line); // contains number of vertices and triangles
+	std::istringstream headerStream(line);
+	int nVertices, nTriangles;
+	headerStream >> nVertices >> nTriangles;
+
+	Mesh mesh;
+	mesh.vertices.resize(3 * nVertices);
+	mesh.vertexColors.resize(4, nVertices);
+	mesh.triangles.resize(3, nTriangles);
+
+	std::cout << "  vertices ..." << std::endl;
+	float x, y, z;
+	int r, g, b, a;
 	for (int i = 0; i < nVertices; i++) {
 		std::getline(in, line);
 		std::istringstream lineStream(line);
-		lineStream >> x >> y >> z;
-		mat(3 * i + 0) = x;
-		mat(3 * i + 1) = y;
-		mat(3 * i + 2) = z;
+		lineStream >> x >> y >> z >> r >> g >> b >> a;
+		mesh.vertices(3 * i + 0) = x;
+		mesh.vertices(3 * i + 1) = y;
+		mesh.vertices(3 * i + 2) = z;
+		mesh.vertexColors.col(i) << r, g, b, a;
+	}
+
+	std::cout << "  triangles ..." << std::endl;
+	int count, v1, v2, v3;
+	for (int i = 0; i < nTriangles; i++) {
+		std::getline(in, line);
+		std::istringstream lineStream(line);
+		lineStream >> count >> v1 >> v2 >> v3;
+
+		if (count != 3) {
+			std::cerr << "WARNING: Can only process triangles, found face with " << count << " vertices while reading " << filename << std::endl;
+			v1 = v2 = v3 = 0;
+		}
+
+		mesh.triangles.col(i) << v1, v2, v3;
 	}
 
 	in.close();
 
-	return mat;
+	return mesh;
 }
 
 std::vector<float> FaceModel::loadBinaryVector(const std::string &filename) {
