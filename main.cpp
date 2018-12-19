@@ -45,16 +45,22 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointsToCloud(const Eigen::VectorXf &poin
 
 
 int main(int argc, char **argv) {
+	std::cout << "Loading face model ..." << std::endl;
 	FaceModel model(baseModelDir);
+	std::cout << "Loading input data ..." << std::endl;
 	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
 	
 	// visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
 	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
 
+	std::cout << "Coarse alignment ..." << std::endl;
 	Matrix4f pose = computeCoarseAlignment(model, inputSensor);
+	std::cout << "Optimizing parameters ..." << std::endl;
 	FaceParameters params = optimizeParameters(model, pose, inputSensor);
 	VectorXf finalShape = model.computeShape(params);
+
+	std::cout << "Done!" << std::endl;
 
 	// visualize final reconstruction (Steve)
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
