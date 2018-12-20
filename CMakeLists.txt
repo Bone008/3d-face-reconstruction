@@ -15,6 +15,29 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
+# Ceres
+if(MSVC)
+    set(Ceres_DIR "Ceres_DIR-NOTFOUND" CACHE PATH "Directory of the precompiled Ceres package we received from the lecturers.")
+    if(NOT EXISTS ${Ceres_DIR})
+        message(FATAL_ERROR "Ceres not found. Please configure Ceres_DIR.")
+    endif()
+    set(CERES_INCLUDE_DIRS
+        "${Ceres_DIR}/ceres-solver/include"
+        "${Ceres_DIR}/glog/src/windows"
+        "${Ceres_DIR}/win/include"
+    )
+    set(CERES_LIBRARIES
+        debug "${Ceres_DIR}/x64/libglog_staticd.lib"
+        debug "${Ceres_DIR}/x64/ceres_staticd.lib"
+        optimized "${Ceres_DIR}/x64/libglog_static.lib"
+        optimized "${Ceres_DIR}/x64/ceres_static.lib"
+    )
+    add_compile_definitions(CERES_USING_STATIC_LIBRARY CERES_MSVC_USE_UNDERSCORE_PREFIXED_BESSEL_FUNCTIONS)
+else()
+    find_package(Ceres REQUIRED)
+endif()
+include_directories(${CERES_INCLUDE_DIRS})
+
 # Set files to be compiled
 set(HEADER_FILES
 		CoarseAlignment.h
@@ -48,4 +71,7 @@ if (MSVC)
 endif()
 
 add_executable(face_reconstruction ${HEADER_FILES} ${SOURCE_FILES})
-target_link_libraries(face_reconstruction ${PCL_LIBRARIES})
+target_link_libraries(face_reconstruction
+    ${PCL_LIBRARIES}
+    ${CERES_LIBRARIES}
+)
