@@ -21,7 +21,7 @@ struct ResidualFunctor {
 			return true;
 		}
 
-		std::cout << "    Evaluating residual " << &inputPoint << " at " << alpha[0] << " ...";
+		//std::cout << "    Evaluating residual " << &inputPoint << " at " << alpha[0] << " ...";
 
 		T worldSpacePixel[] = { T(0), T(0), T(0) };
 
@@ -92,7 +92,6 @@ struct RasterizerFunctor : public ceres::IterationCallback {
 	}
 
 private:
-
 	Matrix3Xf project() {
 		std::cout << "Rasterization: project ..." << std::flush;
 
@@ -108,6 +107,9 @@ private:
 	}
 
 	void rasterize(const Matrix3Xf& projectedVertices) {
+		// Reset output.
+		std::fill(rasterizerResults.begin(), rasterizerResults.end(), PixelData());
+
 		std::cout << " rasterize ..." << std::flush;
 		const Matrix3Xi& triangles = model.m_averageShapeMesh.triangles;
 		for (size_t t = 0; t < triangles.cols(); t++) {
@@ -146,6 +148,12 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::array<double, NUM_EIGEN_VEC> alpha{};
 	std::vector<PixelData> rasterResults(width * height);
 
+	// Set up the rasterizer, which will be called once for each Ceres iteration and 
+	// which updates rasterResults with the current per-pixel rendering results.
+	RasterizerFunctor rasterizerCallback(rasterResults, alpha.data(), model, pose, inputSensor.m_cameraIntrinsics);
+	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
+	rasterizerCallback(ceres::IterationSummary());
+
 	ceres::Problem problem;
 	for (unsigned int y = 0; y < height; y++) {
 		for (unsigned int x = 0; x < width; x++) {
@@ -163,10 +171,6 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 		}
 	}
 	std::cout << "Cost function has " << problem.NumResidualBlocks() << " residual blocks." << std::endl;
-
-	RasterizerFunctor rasterizerCallback(rasterResults, alpha.data(), model, pose, inputSensor.m_cameraIntrinsics);
-	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
-	rasterizerCallback(ceres::IterationSummary());
 
 	ceres::Solver::Options options;
 	options.minimizer_progress_to_stdout = true;
