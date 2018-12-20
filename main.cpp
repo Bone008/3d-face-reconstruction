@@ -53,8 +53,10 @@ int main(int argc, char **argv) {
 
 	// visualize final reconstruction (Steve)
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(finalShape), *transformedCloud, pose);
-	viewer.addPointCloud(transformedCloud, "finalCloud");
+	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+
+    pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr transformedMeshCloud(transformedCloud);
+    viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedMeshCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles));
 
 	viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
 	while (!viewer.wasStopped()) {
