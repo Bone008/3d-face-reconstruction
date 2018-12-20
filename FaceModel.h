@@ -24,16 +24,16 @@ public:
 
 
 	// Computes the vertex positions of a face based on a set of parameters.
-	Eigen::VectorXf computeShape(const FaceParameters& params);
+	Eigen::VectorXf computeShape(const FaceParameters& params) const;
 
-	FaceParameters computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender);
+	FaceParameters computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender) const;
 
-	unsigned int getNumVertices() { return m_averageShapeMesh.vertices.rows() / 3; }
-	unsigned int getNumEigenVec() { return m_shapeBasis.cols(); }
-	unsigned int getNumExprVec() { return m_expressionBasis.cols(); }
+	unsigned int getNumVertices() const { return m_averageShapeMesh.vertices.rows() / 3; }
+	unsigned int getNumEigenVec() const { return m_shapeBasis.cols(); }
+	unsigned int getNumExprVec() const { return m_expressionBasis.cols(); }
 
 private:
-	const Mesh loadOFF(const std::string & filename);
-	std::vector<float> loadBinaryVector(const std::string &filename);
+	const Mesh loadOFF(const std::string & filename) const;
+	std::vector<float> loadBinaryVector(const std::string &filename) const;
 };
 

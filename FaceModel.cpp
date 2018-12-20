@@ -52,12 +52,12 @@ FaceModel::FaceModel(const std::string& baseDir) {
 	*/
 }
 
-Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params)
+Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
 {
 	return m_averageShapeMesh.vertices + m_shapeBasis * params.alpha;
 }
 
-FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender)
+FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender) const
 {
 	FaceParameters outparams = params;
 	// load attribute age alpha +50 * older
@@ -81,7 +81,7 @@ FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, fl
 }
 
 // Utility function to primitively load a file in the STOFF format.
-const Mesh FaceModel::loadOFF(const std::string& filename) {
+const Mesh FaceModel::loadOFF(const std::string& filename) const {
 	std::ifstream in(filename, std::ifstream::in);
 	if (!in) {
 		std::cout << "ERROR:\tCan not open file: " << filename << std::endl;
@@ -133,7 +133,7 @@ const Mesh FaceModel::loadOFF(const std::string& filename) {
 	return mesh;
 }
 
-std::vector<float> FaceModel::loadBinaryVector(const std::string &filename) {
+std::vector<float> FaceModel::loadBinaryVector(const std::string &filename) const {
 	std::ifstream in(filename, std::ifstream::in | std::ifstream::binary);
 	if (!in) {
 		std::cout << "ERROR:\tCan not open file: " << filename << std::endl;
