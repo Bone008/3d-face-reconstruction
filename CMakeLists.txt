@@ -51,6 +51,7 @@ set(HEADER_FILES
 		stdafx.h
 		utils.h)
 set(SOURCE_FILES
+		ProcrustesAligner.cpp
 		CoarseAlignment.cpp
 		FaceModel.cpp
 		Optimizer.cpp

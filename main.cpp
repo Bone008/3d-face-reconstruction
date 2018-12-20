@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "VirtualSensor.h"
 #include "FaceModel.h"
 #include "CoarseAlignment.h"
 #include "Optimizer.h"
@@ -43,10 +44,10 @@ int main(int argc, char **argv) {
 	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
 
 	std::cout << "Coarse alignment ..." << std::endl;
-	Matrix4f pose = computeCoarseAlignment(model, inputSensor);
+	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
 	std::cout << "Optimizing parameters ..." << std::endl;
 	FaceParameters params = optimizeParameters(model, pose, inputSensor);
-	VectorXf finalShape = model.computeShape(params);
+	Eigen::VectorXf finalShape = model.computeShape(params);
 
 	std::cout << "Done!" << std::endl;
 

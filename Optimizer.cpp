@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "Optimizer.h"
-#define GLOG_NO_ABBREVIATED_SEVERITIES
-#include <ceres/ceres.h>
+
+using namespace Eigen;
 
 struct ResidualFunctor {
 	// x is the source (average mesh), y is the target (input cloud)

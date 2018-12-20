@@ -1,5 +1,4 @@
 #pragma once
-#include <Eigen/Eigen>
 #include "FaceModel.h"
 #include "Sensor.h"
 
@@ -9,7 +8,8 @@
 // computed individually by the residual functors.
 struct PixelData {
 	int vertexIndices[3];
-	double barycentrixCoordinates[3];
+	double barycentricCoordinates[3];
+	bool isValid;
 };
 
 FaceParameters optimizeParameters(FaceModel& model, const Eigen::Matrix4f& pose, const Sensor& inputSensor);

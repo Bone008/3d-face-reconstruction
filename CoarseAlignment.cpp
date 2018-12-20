@@ -2,13 +2,16 @@
 #include "CoarseAlignment.h"
 #include <pcl/registration/icp.h>
 #include "utils.h"
+#include "FaceModel.h"
+#include "Sensor.h"
+#include "ProcrustesAligner.h"
 
 Eigen::Matrix4f computeCoarseAlignment(const FaceModel& model, const Sensor& inputSensor)
 {
 	// transform average mesh using procrustes
 	std::cout << "  procrustes ..." << std::endl;
 	ProcrustesAligner pa;
-	Matrix4f pose = pa.estimatePose(model.m_averageFeaturePoints, inputSensor.m_featurePoints);
+	Eigen::Matrix4f pose = pa.estimatePose(model.m_averageFeaturePoints, inputSensor.m_featurePoints);
 
 	// transform average mesh using icp
 	std::cout << "  icp ... " << std::flush;

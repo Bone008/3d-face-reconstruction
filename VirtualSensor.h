@@ -1,8 +1,7 @@
 #pragma once
-
-#include <pcl/common/common.h>
-#include <pcl/io/pcd_io.h>
 #include "Sensor.h"
+#include "FeaturePointExtractor.h"
+#include <pcl/io/pcd_io.h>
 
 class VirtualSensor : public Sensor {
 public:
