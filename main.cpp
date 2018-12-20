@@ -2,6 +2,7 @@
 #include "FaceModel.h"
 #include "CoarseAlignment.h"
 #include "Optimizer.h"
+#include "utils.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
 const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
@@ -28,19 +29,6 @@ void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> red(points_to_highlight);
     viewer.addPointCloud<pcl::PointXYZRGB>(points_to_highlight, red, name);
     viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 10, name);
-}
-
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointsToCloud(const Eigen::VectorXf &points) {
-    const int nVertices = points.rows() / 3;
-    pcl::PointXYZRGB tpl;
-    tpl.r = tpl.g = tpl.b = 255;
-    pcl::PointCloud<pcl::PointXYZRGB> cloud(nVertices, 1, tpl);
-    for (int p = 0; p < nVertices; p++) {
-        cloud.points[p].x = points(3 * p + 0);
-        cloud.points[p].y = points(3 * p + 1);
-        cloud.points[p].z = points(3 * p + 2);
-    }
-    return cloud.makeShared();
 }
 
 

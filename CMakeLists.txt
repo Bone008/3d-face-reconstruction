@@ -25,12 +25,14 @@ set(HEADER_FILES
 		FaceModel.h
 		Optimizer.h
 		Sensor.h
-		stdafx.h)
+		stdafx.h
+		utils.h)
 set(SOURCE_FILES
 		CoarseAlignment.cpp
 		FaceModel.cpp
 		Optimizer.cpp
 		main.cpp
+		utils.cpp
 )
 
 if (MSVC)
