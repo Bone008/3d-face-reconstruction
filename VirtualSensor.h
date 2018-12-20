@@ -16,6 +16,11 @@ public:
 		// load feature points from file
 		FeaturePointExtractor inputFeatureExtractor(filenameFeaturePoints, m_cloud);
 		m_featurePoints = inputFeatureExtractor.m_points;
+
+		m_cameraIntrinsics <<
+			1052.667867276341, 0, 962.4130834944134,
+			0, 1052.020917785721, 536.2206151001486,
+			0, 0, 1;
     };
 
 };
