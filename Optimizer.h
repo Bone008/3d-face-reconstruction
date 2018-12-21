@@ -8,7 +8,7 @@
 // computed individually by the residual functors.
 struct PixelData {
 	int vertexIndices[3];
-	double barycentricCoordinates[3];
+	Eigen::Vector3f barycentricCoordinates;
 	bool isValid;
 };
 
