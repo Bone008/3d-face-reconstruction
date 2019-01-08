@@ -5,7 +5,9 @@
 using namespace Eigen;
 
 // Constant to allow better compile-time optimization.
-const unsigned int NUM_EIGEN_VEC = 160;
+// If this is smaller than the number of actual eigen vectors (160),
+// only the first ones will be optimized over.
+const unsigned int NUM_EIGEN_VEC = 20;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
@@ -37,7 +39,7 @@ struct ResidualFunctor {
 			};
 
 			// Displace by applying alpha.
-			for (int j = 0; j < shapeBasis.cols(); j++) {
+			for (int j = 0; j < NUM_EIGEN_VEC; j++) {
 				pos[0] += T(shapeBasis(3 * vertexIndex + 0, j)) * alpha[j];
 				pos[1] += T(shapeBasis(3 * vertexIndex + 1, j)) * alpha[j];
 				pos[2] += T(shapeBasis(3 * vertexIndex + 2, j)) * alpha[j];
@@ -81,7 +83,7 @@ private:
 struct RegularizerFunctor
 {
 	// TODO pass in from the outside
-	const float regStrength = 0.5f;
+	const float regStrength = 0.1f * (160 / NUM_EIGEN_VEC);
 
 	template <typename T>
 	bool operator()(T const* alpha, T* residual) const {
@@ -136,10 +138,12 @@ private:
 	const Array2i frameSize;
 
 	Matrix3Xf project() {
+		//std::cout << "Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
 		std::cout << "Rasterization: project ..." << std::flush;
 
 		FaceParameters params;
-		params.alpha = Map<const VectorXd>(alpha, NUM_EIGEN_VEC).cast<float>();
+		params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
+		params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha, NUM_EIGEN_VEC).cast<float>();
 
 		VectorXf flatVertices = model.computeShape(params);
 		Matrix3Xf worldVertices = pose.topLeftCorner<3, 3>() * Map<Matrix3Xf>(flatVertices.data(), 3, model.getNumVertices());
@@ -215,6 +219,7 @@ private:
 		{
 			std::cout << " saving bmp ..." << std::flush;
 			BMP bmp(frameSize.x(), frameSize.y());
+			BMP bmpCol(frameSize.x(), frameSize.y());
 			// replace infinity values in buffer with 0
 			for (size_t i = 0; i < depthBuffer.size(); i++) {
 				if (std::isinf(depthBuffer.data()[i]))
@@ -222,23 +227,39 @@ private:
 			}
 			const float scale = depthBuffer.maxCoeff();
 			for (int i = 0; i < depthBuffer.size(); i++) {
-				Array4i col;
+				Array4i depthCol;
 				if (depthBuffer.data()[i] == 0) {
-					col = Array4i(0, 0, 30, 255);
+					depthCol = Array4i(0, 0, 30, 255);
 				}
 				else {
 					int c = int(depthBuffer.data()[i] / scale * 255);
-					col = Array4i(c, c, c, 255);
+					depthCol = Array4i(c, c, c, 255);
 				}
-				bmp.data[4 * i + 2] = col[0];
-				bmp.data[4 * i + 1] = col[1];
-				bmp.data[4 * i + 0] = col[2];
-				bmp.data[4 * i + 3] = col[3];
+				bmp.data[4 * i + 2] = depthCol[0];
+				bmp.data[4 * i + 1] = depthCol[1];
+				bmp.data[4 * i + 0] = depthCol[2];
+				bmp.data[4 * i + 3] = depthCol[3];
+
+				auto& result = rasterizerResults[i];
+				Array4f col;
+				col << 0, 0, 0, 0;
+				for (int v = 0; v < 3; v++) {
+					float bary = result.barycentricCoordinates(v);
+					auto& vcol = model.m_averageShapeMesh.vertexColors.col(result.vertexIndices[v]);
+					col += bary * vcol.array().cast<float>();
+				}
+
+				bmpCol.data[4 * i + 2] = col[0];
+				bmpCol.data[4 * i + 1] = col[1];
+				bmpCol.data[4 * i + 0] = col[2];
+				bmpCol.data[4 * i + 3] = col[3];
 			}
 
 			char filename[100];
 			sprintf(filename, "depthmap_%d.bmp", numCalls);
 			bmp.write(filename);
+			sprintf(filename, "ecolmap_%d.bmp", numCalls);
+			bmpCol.write(filename);
 		}
 
 		std::cout << " done!" << std::endl;
@@ -248,25 +269,35 @@ private:
 FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor) {
 	const uint32_t width = inputSensor.m_cloud->width;
 	const uint32_t height = inputSensor.m_cloud->height;
+
 	std::array<double, NUM_EIGEN_VEC> alpha{};
 	std::vector<PixelData> rasterResults(width * height);
 
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;
 		BMP bmp(width, height);
-		for (size_t i = 0; i < inputSensor.m_cloud->size(); i++) {
-			auto& p = inputSensor.m_cloud->at(i);
-			Vector3f projectedPoint = inputSensor.m_cameraIntrinsics * Vector3f(p.x, p.y, p.z);
-			auto s = projectedPoint.head<2>() / projectedPoint.z();
-			int sx = int(s.x());
-			int sy = int(s.y());
+		for (unsigned int y = 0; y < height; y++) {
+			for (unsigned int x = 0; x < width; x++) {
+				auto& p = (*inputSensor.m_cloud)(x, y);
+				if (std::isnan(p.x) || std::isnan(p.y))
+					continue;
+				Vector3f projectedPoint = inputSensor.m_cameraIntrinsics * Vector3f(p.x, p.y, p.z);
+				auto s = projectedPoint.head<2>() / projectedPoint.z();
+				int sx = int(s.x() + 0.5f);
+				int sy = int(s.y() + 0.5f);
 
-			if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
-				int bmpIndex = (sy * width + sx);
-				bmp.data[4 * bmpIndex + 2] = p.r;
-				bmp.data[4 * bmpIndex + 1] = p.g;
-				bmp.data[4 * bmpIndex + 0] = p.b;
-				bmp.data[4 * bmpIndex + 3] = 255;
+				if (sx != x || sy != y) {
+					std::cout << "(" << x << "," << y << ") goes to (" << sx << "," << sy << ")" << std::endl;
+				}
+
+				if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+					//int bmpIndex = (sy * width + sx);
+					int bmpIndex = (y * width + x);
+					bmp.data[4 * bmpIndex + 2] = p.r;
+					bmp.data[4 * bmpIndex + 1] = p.g;
+					bmp.data[4 * bmpIndex + 0] = p.b;
+					bmp.data[4 * bmpIndex + 3] = 255;
+				}
 			}
 		}
 		bmp.write("inputsensor.bmp");
@@ -280,8 +311,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	rasterizerCallback(ceres::IterationSummary());
 
 	ceres::Problem problem;
-	for (unsigned int y = 0; y < height; y += 3) {
-		for (unsigned int x = 0; x < width; x += 3) {
+	for (unsigned int y = 0; y < height; y += 2) {
+		for (unsigned int x = 0; x < width; x += 2) {
 			const pcl::PointXYZRGB& point = (*inputSensor.m_cloud)(x, y);
 			if (std::isnan(point.z)) {
 				continue;
@@ -311,9 +342,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::cout << "Some final values of alpha: " << Map<VectorXd>(alpha.data(), 10) << std::endl;
 
 	FaceParameters params;
-	params.alpha = Map<VectorXd>(alpha.data(), NUM_EIGEN_VEC).cast<float>();
+	params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
+	params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha.data(), NUM_EIGEN_VEC).cast<float>();
 
-	// For now, don't actually return the values because they don't make sense yet.
-	//params.alpha.setZero();
 	return params;
 }
