@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "VirtualSensor.h"
+#include "OpenNI2Sensor.h"
 #include "FaceModel.h"
 #include "CoarseAlignment.h"
 #include "Optimizer.h"
@@ -36,11 +37,15 @@ void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::
 int main(int argc, char **argv) {
 	std::cout << "Loading face model ..." << std::endl;
 	FaceModel model(baseModelDir);
-	std::cout << "Loading input data ..." << std::endl;
-	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
-	
+	std::cout << "Loading input data from sensor ..." << std::endl;
+
+    //const Sensor& inputSensor = VirtualSensor("test_pcd.pcd", inputFeaturePointsFile);
+    // TODO the point cloud is not displayed
+    const Sensor& inputSensor = OpenNI2Sensor();
+
 	// visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
+	/*
 	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
 
 	std::cout << "Coarse alignment ..." << std::endl;
@@ -57,8 +62,8 @@ int main(int argc, char **argv) {
 
     pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr transformedMeshCloud(transformedCloud);
     viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedMeshCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles));
-
-	viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
+*/
+	//viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
 	while (!viewer.wasStopped()) {
 		// TODO: react to input to modify params and call viewer.updatePointCloud(...)
 		viewer.spinOnce(500);

@@ -49,7 +49,7 @@ set(HEADER_FILES
 		Optimizer.h
 		Sensor.h
 		stdafx.h
-		utils.h)
+		utils.h OpenNI2Sensor.h)
 set(SOURCE_FILES
 		ProcrustesAligner.cpp
 		CoarseAlignment.cpp
@@ -57,6 +57,7 @@ set(SOURCE_FILES
 		Optimizer.cpp
 		main.cpp
 		utils.cpp
+		OpenNI2Sensor.cpp
 )
 
 if (MSVC)
