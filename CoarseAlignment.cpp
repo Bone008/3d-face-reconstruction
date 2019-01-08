@@ -21,9 +21,9 @@ Eigen::Matrix4f computeCoarseAlignment(const FaceModel& model, const Sensor& inp
 	pcl::IterativeClosestPoint<pcl::PointXYZRGB, pcl::PointXYZRGB> icp;
 	icp.setInputSource(procrustesModelCloud);
 	icp.setInputTarget(inputSensor.m_cloud);
-	icp.setMaxCorrespondenceDistance (0.01); // TODO tweak
+	icp.setMaxCorrespondenceDistance (0.2); // TODO tweak
 	icp.setTransformationEpsilon (1e-8);// TODO tweak
-	icp.setEuclideanFitnessEpsilon (0.1); // TODO tweak
+	icp.setEuclideanFitnessEpsilon (0.001); // TODO tweak
 
     pcl::PointCloud<pcl::PointXYZRGB> icpAlignedCloud;
     icp.align(icpAlignedCloud);
