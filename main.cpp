@@ -4,6 +4,11 @@
 #include "CoarseAlignment.h"
 #include "Optimizer.h"
 #include "utils.h"
+#include <pcl/io/io.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/features/integral_image_normal.h>
+#include <pcl/visualization/cloud_viewer.h>
+#include <pcl/features/normal_3d.h>
 
 const std::string baseModelDir = "../data/MorphableModel/";
 const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
@@ -40,9 +45,9 @@ int main(int argc, char **argv) {
 	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
 	
 	// visualize input point cloud (John)
-	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
-	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
-
+	//viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
+	//highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
+	
 	std::cout << "Coarse alignment ..." << std::endl;
 	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
 	std::cout << "Optimizing parameters ..." << std::endl;
