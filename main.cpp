@@ -45,8 +45,8 @@ int main(int argc, char **argv) {
 	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
 	
 	// visualize input point cloud (John)
-	//viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
-	//highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
+	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
+	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
 	
 	std::cout << "Coarse alignment ..." << std::endl;
 	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
@@ -59,9 +59,26 @@ int main(int argc, char **argv) {
 	// visualize final reconstruction (Steve)
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
 
-    pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr transformedMeshCloud(transformedCloud);
-    viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedMeshCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles));
+	bool useParams = true;
+
+	viewer.registerKeyboardCallback([&](const pcl::visualization::KeyboardEvent keyEvent) {
+		if (keyEvent.getKeySym() != "Tab" || !keyEvent.keyUp())
+			return;
+
+		useParams = !useParams;
+		std::cout << "Switching to " << (useParams ? "optimized" : "default") << " face." << std::endl;
+		FaceParameters newParams = params;
+		if (!useParams) {
+			newParams.alpha.setZero();
+		}
+
+		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+		pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
+	});
 
 	viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
 	while (!viewer.wasStopped()) {
