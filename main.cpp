@@ -10,10 +10,13 @@ const std::string baseModelDir = "../data/MorphableModel/";
 const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
 const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
 const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
+const std::string sensorOutputFacePcdFile = inputFaceBaseDir + "temp_cloud.pcd";
+const std::string sensorFeaturePointsFile = inputFaceBaseDir + "temp_features.points";
+const bool useDepthSensor = true;
 
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
-void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::vector<Eigen::Vector3f> &featurePoints,
+void highlightFeaturePoints(std::vector<Eigen::Vector3f> featurePoints,
                             const std::string &name) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr points_to_highlight(new pcl::PointCloud<pcl::PointXYZRGB>);
 
@@ -37,33 +40,38 @@ void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::
 int main(int argc, char **argv) {
 	std::cout << "Loading face model ..." << std::endl;
 	FaceModel model(baseModelDir);
-	std::cout << "Loading input data from sensor ..." << std::endl;
 
-    //const Sensor& inputSensor = VirtualSensor("test_pcd.pcd", inputFeaturePointsFile);
-    // TODO the point cloud is not displayed
-    const Sensor& inputSensor = OpenNI2Sensor();
+    // load cloud from sensor/file
+    std::cout << "Loading point cloud ..." << std::endl;
+    const Sensor* inputSensorPtr;
+    if (useDepthSensor) {
+        inputSensorPtr = new OpenNI2Sensor(sensorOutputFacePcdFile, sensorFeaturePointsFile);
+    } else {
+        inputSensorPtr = new VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
+    }
+    const Sensor& inputSensor = *inputSensorPtr; // yes, i really don't want to use pointers
 
-	// visualize input point cloud (John)
+    // visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
-	/*
-	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
+	highlightFeaturePoints(inputSensor.m_featurePoints, "inputCloudFeatures");
 
-	std::cout << "Coarse alignment ..." << std::endl;
-	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
-	std::cout << "Optimizing parameters ..." << std::endl;
-	FaceParameters params = optimizeParameters(model, pose, inputSensor);
-	Eigen::VectorXf finalShape = model.computeShape(params);
+    std::cout << "Coarse alignment ..." << std::endl;
+    Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
 
-	std::cout << "Done!" << std::endl;
+    std::cout << "Optimizing parameters ..." << std::endl;
+    FaceParameters params = optimizeParameters(model, pose, inputSensor);
+    Eigen::VectorXf finalShape = model.computeShape(params);
 
-	// visualize final reconstruction (Steve)
-	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+    std::cout << "Done!" << std::endl;
+
+    // visualize final reconstruction (Steve)
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+    pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
 
     pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr transformedMeshCloud(transformedCloud);
     viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedMeshCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles));
-*/
-	//viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
+
+	viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
 	while (!viewer.wasStopped()) {
 		// TODO: react to input to modify params and call viewer.updatePointCloud(...)
 		viewer.spinOnce(500);

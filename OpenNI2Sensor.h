@@ -8,10 +8,9 @@ typedef pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr PointCloudT;
 class OpenNI2Sensor : public Sensor {
 public:
 
-    OpenNI2Sensor();
+    OpenNI2Sensor(const std::string& filenamePcd, const std::string& filenameFeaturePoints);
 
-    void cloud_cb (const PointCloudT &cloud);
 private:
-    pcl::visualization::CloudViewer m_viewer;
-    PointCloudT m_cloud_rgba;
+    void capturePointCloudToFile(const std::string& filenamePcd);
+    void loadFromFile(const std::string& filenamePcd);
 };
