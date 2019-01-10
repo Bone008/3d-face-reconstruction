@@ -1,13 +1,15 @@
 #include "stdafx.h"
+#include <pcl/filters/crop_box.h>
 #include "Optimizer.h"
 #include "BMP.h"
+#include "utils.h"
 
 using namespace Eigen;
 
 // Constant to allow better compile-time optimization.
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
-const unsigned int NUM_EIGEN_VEC = 20;
+const unsigned int NUM_EIGEN_VEC = 160;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
@@ -83,12 +85,13 @@ private:
 struct RegularizerFunctor
 {
 	// TODO pass in from the outside
-	const float regStrength = 0.1f * (160 / NUM_EIGEN_VEC);
+	const float regStrength = 25.f;
 
 	template <typename T>
 	bool operator()(T const* alpha, T* residual) const {
+		T factor = T(regStrength / NUM_EIGEN_VEC);
 		for (size_t i = 0; i < NUM_EIGEN_VEC; i++) {
-			residual[i] = T(regStrength) * alpha[i];
+			residual[i] = factor * alpha[i];
 		}
 		return true;
 	}
@@ -138,8 +141,8 @@ private:
 	const Array2i frameSize;
 
 	Matrix3Xf project() {
-		//std::cout << "Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
-		std::cout << "Rasterization: project ..." << std::flush;
+		std::cout << "          Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
+		std::cout << "          Rasterization: project ..." << std::flush;
 
 		FaceParameters params;
 		params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
@@ -266,9 +269,42 @@ private:
 	}
 };
 
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
+	pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr inputCloud,
+	const Matrix4f& pose,
+	const FaceModel& model)
+{
+	// find average Steve's size
+	pcl::PointCloud<pcl::PointXYZRGB> transformedSteve;
+	pcl::transformPointCloud(*pointsToCloud(model.m_averageShapeMesh.vertices), transformedSteve, pose);
+	Vector4f min;
+	Vector4f max;
+	pcl::getMinMax3D(transformedSteve, min, max);
+
+	Vector4f size = max - min;
+	min = min - size / 2;
+	max = max + size / 2;
+	min.w() = 1;
+	max.w() = 1;
+
+	std::cout << "Crop region: " << min.transpose() << " to " << max.transpose() << std::endl;
+
+	pcl::CropBox<pcl::PointXYZRGB> boxFilter;
+	boxFilter.setMin(min);
+	boxFilter.setMax(max);
+	boxFilter.setInputCloud(inputCloud);
+	boxFilter.setKeepOrganized(true);
+
+	pcl::PointCloud<pcl::PointXYZRGB>::Ptr out(new pcl::PointCloud<pcl::PointXYZRGB>);
+	boxFilter.filter(*out);
+	return out;
+}
+
 FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor) {
-	const uint32_t width = inputSensor.m_cloud->width;
-	const uint32_t height = inputSensor.m_cloud->height;
+	auto croppedCloud = cropCloudToHeadRegion(inputSensor.m_cloud, pose, model);
+
+	const uint32_t width = croppedCloud->width;
+	const uint32_t height = croppedCloud->height;
 
 	std::array<double, NUM_EIGEN_VEC> alpha{};
 	std::vector<PixelData> rasterResults(width * height);
@@ -278,7 +314,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 		BMP bmp(width, height);
 		for (unsigned int y = 0; y < height; y++) {
 			for (unsigned int x = 0; x < width; x++) {
-				auto& p = (*inputSensor.m_cloud)(x, y);
+				auto& p = (*croppedCloud)(x, y);
 				if (std::isnan(p.x) || std::isnan(p.y))
 					continue;
 				Vector3f projectedPoint = inputSensor.m_cameraIntrinsics * Vector3f(p.x, p.y, p.z);
@@ -313,7 +349,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	ceres::Problem problem;
 	for (unsigned int y = 0; y < height; y += 2) {
 		for (unsigned int x = 0; x < width; x += 2) {
-			const pcl::PointXYZRGB& point = (*inputSensor.m_cloud)(x, y);
+			const pcl::PointXYZRGB& point = (*croppedCloud)(x, y);
 			if (std::isnan(point.z)) {
 				continue;
 			}
@@ -333,7 +369,10 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	ceres::Solver::Options options;
 	options.minimizer_progress_to_stdout = true;
 	options.update_state_every_iteration = true;
-	options.linear_solver_type = ceres::LinearSolverType::SPARSE_SCHUR;
+	options.linear_solver_type = ceres::LinearSolverType::DENSE_QR;
+	options.minimizer_type = ceres::MinimizerType::TRUST_REGION;
+	options.initial_trust_region_radius = 5e-3;
+	options.max_trust_region_radius = 0.15;
 	options.callbacks.push_back(&rasterizerCallback);
 	ceres::Solver::Summary summary;
 	ceres::Solve(options, &problem, &summary);
