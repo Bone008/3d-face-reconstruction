@@ -9,6 +9,7 @@
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/features/normal_3d.h>
+#include "SwitchControl.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
 const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
@@ -61,16 +62,15 @@ int main(int argc, char **argv) {
 	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
 	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
 
-	bool useParams = true;
+	std::vector<std::string> states;
+	states.emplace_back("Optimized");
+	states.emplace_back("Default");
 
-	viewer.registerKeyboardCallback([&](const pcl::visualization::KeyboardEvent keyEvent) {
-		if (keyEvent.getKeySym() != "Tab" || !keyEvent.keyUp())
-			return;
+	SwitchControl sc(viewer, states, "", "Tab", [&](int state) {
+		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
-		useParams = !useParams;
-		std::cout << "Switching to " << (useParams ? "optimized" : "default") << " face." << std::endl;
 		FaceParameters newParams = params;
-		if (!useParams) {
+		if (state == 1 /* Default */) {
 			newParams.alpha.setZero();
 		}
 

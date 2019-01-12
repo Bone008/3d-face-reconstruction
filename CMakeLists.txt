@@ -49,7 +49,8 @@ set(HEADER_FILES
 		Optimizer.h
 		Sensor.h
 		stdafx.h
-		utils.h)
+		utils.h
+		SwitchControl.h)
 set(SOURCE_FILES
 		ProcrustesAligner.cpp
 		CoarseAlignment.cpp
@@ -57,7 +58,7 @@ set(SOURCE_FILES
 		Optimizer.cpp
 		main.cpp
 		utils.cpp
-)
+        SwitchControl.cpp)
 
 if (MSVC)
     # For precompiled header.
