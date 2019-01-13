@@ -5,7 +5,7 @@
 class SwitchControl {
 public:
     SwitchControl(pcl::visualization::PCLVisualizer& viewer, std::vector<std::string> states, std::string keyBackward, std::string keyForward, std::function<void(int)> callee);
-
+    int getState();
 private:
     static int s_currentY;
     static int s_currentID;

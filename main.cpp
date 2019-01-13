@@ -10,16 +10,21 @@
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/features/normal_3d.h>
 #include "SwitchControl.h"
+#include "Visualizer.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
 const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
 const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
 const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
 
-pcl::visualization::PCLVisualizer viewer("PCL Viewer");
+// TODO run visualizer on own thread
+// TODO add switch for feature points (on/off)
+// TODO add switches again after changing viewports
+// TODO visualize intermediate output during optimization
+// TODO add switch for different intermediate outputs
+Visualizer visualizer;
 
-void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::vector<Eigen::Vector3f> &featurePoints,
-                            const std::string &name) {
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr getFeaturePointPcl(std::vector<Eigen::Vector3f> &featurePoints) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr points_to_highlight(new pcl::PointCloud<pcl::PointXYZRGB>);
 
     for (auto const &point: featurePoints) {
@@ -33,22 +38,20 @@ void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::
         points_to_highlight->points.push_back(selected_point);
     }
 
-    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> red(points_to_highlight);
-    viewer.addPointCloud<pcl::PointXYZRGB>(points_to_highlight, red, name);
-    viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 10, name);
+    return points_to_highlight;
 }
 
 
 int main(int argc, char **argv) {
-	std::cout << "Loading face model ..." << std::endl;
+    std::cout << "Loading face model ..." << std::endl;
 	FaceModel model(baseModelDir);
 	std::cout << "Loading input data ..." << std::endl;
 	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
-	
+
 	// visualize input point cloud (John)
-	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
-	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
-	
+	visualizer.setJohnPcl(inputSensor.m_cloud);
+	visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
+
 	std::cout << "Coarse alignment ..." << std::endl;
 	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
 	std::cout << "Optimizing parameters ..." << std::endl;
@@ -60,13 +63,15 @@ int main(int argc, char **argv) {
 	// visualize final reconstruction (Steve)
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
-	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
+	visualizer.setStevePcl(transformedCloud);
+	visualizer.setSteveVertices(trianglesToVertexList(model.m_averageShapeMesh.triangles));
 
+	// add switch (optimized/default)
 	std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
 
-	SwitchControl sc(viewer, states, "", "Tab", [&](int state) {
+	SwitchControl sc(visualizer.getViewer(), states, "", "Tab", [&](int state) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
 		FaceParameters newParams = params;
@@ -77,13 +82,10 @@ int main(int argc, char **argv) {
 		Eigen::VectorXf finalShape = model.computeShape(newParams);
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 		pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
-		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
+		visualizer.setStevePcl(transformedCloud);
 	});
 
-	viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
-	while (!viewer.wasStopped()) {
-		// TODO: react to input to modify params and call viewer.updatePointCloud(...)
-		viewer.spinOnce(500);
-	}
+	visualizer.run();
+
 	return 0;
 }

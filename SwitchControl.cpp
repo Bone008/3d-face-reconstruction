@@ -38,3 +38,7 @@ SwitchControl::SwitchControl(pcl::visualization::PCLVisualizer& viewer, std::vec
     });
     s_currentY += (m_numStates + 1) * c_textHeight;
 }
+
+int SwitchControl::getState() {
+    return m_currentState;
+}
