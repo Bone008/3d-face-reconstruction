@@ -55,6 +55,10 @@ FaceModel::FaceModel(const std::string& baseDir) {
 	// load standard deviations
 	std::vector<float> shapeStdRaw = loadBinaryVector(baseDir + filenameStdDevShape);
 	m_shapeStd = Eigen::Map<Eigen::RowVectorXf>(shapeStdRaw.data(), shapeStdRaw.size());
+	std::vector<float> albedoStdRaw = loadBinaryVector(baseDir + filenameStdDevAlbedo);
+	m_albedoStd = Eigen::Map<Eigen::RowVectorXf>(albedoStdRaw.data(), albedoStdRaw.size());
+	std::vector<float> expressionStdRaw = loadBinaryVector(baseDir + filenameStdDevExpression);
+	m_expressionStd = Eigen::Map<Eigen::RowVectorXf>(expressionStdRaw.data(), expressionStdRaw.size());
 }
 
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
@@ -72,7 +76,8 @@ Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
 	// reshape from matrix (3, numVertices) to vector (3 * numVertices)
 	Eigen::Map<Eigen::VectorXf> flatColorsRGB(colorsRGB.data(), 3 * getNumVertices());
 
-	flatColorsRGB += m_albedoBasis * params.beta;
+	auto& scaledBeta = (params.beta.array() * m_albedoStd.array()).matrix();
+	flatColorsRGB += m_albedoBasis * scaledBeta;
 
 	// convert back to RGBA int representation
 	Eigen::Matrix4Xi result(4, getNumVertices());

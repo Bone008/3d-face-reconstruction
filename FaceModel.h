@@ -30,6 +30,10 @@ public:
 
 	// Standard deviation of the shape parameters alpha. Shape (numEigenVec)
 	Eigen::VectorXf m_shapeStd;
+	// Standard deviation of the albedo parameters beta. Shape (numEigenVec)
+	Eigen::VectorXf m_albedoStd;
+	// Standard deviation of the expression parameters delta . Shape (numExprVec)
+	Eigen::VectorXf m_expressionStd;
 
 
 	// Computes the vertex positions based on a set of parameters.
