@@ -16,7 +16,7 @@ Eigen::Matrix4f computeCoarseAlignment(const FaceModel& model, const Sensor& inp
 	// transform average mesh using icp
 	std::cout << "  icp ... " << std::flush;
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr procrustesModelCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(model.m_averageShapeMesh.vertices), *procrustesModelCloud, pose);
+	pcl::transformPointCloud(*pointsToCloud(model.m_averageMesh.vertices), *procrustesModelCloud, pose);
 
 	pcl::IterativeClosestPoint<pcl::PointXYZRGB, pcl::PointXYZRGB> icp;
 	icp.setInputSource(procrustesModelCloud);

@@ -164,7 +164,7 @@ private:
 		ArrayXXf depthBuffer(frameSize.x(), frameSize.y());
 		depthBuffer.setConstant(std::numeric_limits<float>::infinity());
 
-		const Matrix3Xi& triangles = model.m_averageShapeMesh.triangles;
+		const Matrix3Xi& triangles = model.m_averageMesh.triangles;
 
 		for (size_t t = 0; t < triangles.cols(); t++) {
 			const auto& indices = triangles.col(t);
@@ -247,7 +247,7 @@ private:
 				col << 0, 0, 0, 0;
 				for (int v = 0; v < 3; v++) {
 					float bary = result.barycentricCoordinates(v);
-					auto& vcol = model.m_averageShapeMesh.vertexColors.col(result.vertexIndices[v]);
+					auto& vcol = model.m_averageMesh.vertexColors.col(result.vertexIndices[v]);
 					col += bary * vcol.array().cast<float>();
 				}
 
@@ -275,7 +275,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
 {
 	// find average Steve's size
 	pcl::PointCloud<pcl::PointXYZRGB> transformedSteve;
-	pcl::transformPointCloud(*pointsToCloud(model.m_averageShapeMesh.vertices), transformedSteve, pose);
+	pcl::transformPointCloud(*pointsToCloud(model.m_averageMesh.vertices), transformedSteve, pose);
 	Vector4f min;
 	Vector4f max;
 	pcl::getMinMax3D(transformedSteve, min, max);
@@ -354,7 +354,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 			}
 
 			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, 3, NUM_EIGEN_VEC>(
-				new ResidualFunctor(point, rasterResults[y * width + x], model.m_averageShapeMesh.vertices, model.m_shapeBasis, pose));
+				new ResidualFunctor(point, rasterResults[y * width + x], model.m_averageMesh.vertices, model.m_shapeBasis, pose));
 			problem.AddResidualBlock(costFunc, NULL, alpha.data());
 		}
 	}

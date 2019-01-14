@@ -22,8 +22,8 @@ Eigen::MatrixXf discardEvery4thRow(const Eigen::Ref<const Eigen::MatrixXf>& matr
 
 FaceModel::FaceModel(const std::string& baseDir) {
 	// load average shape
-	m_averageShapeMesh = loadOFF(baseDir + filenameAverageMesh);
-	m_averageShapeMesh.vertices /= 1000000.0f;
+	m_averageMesh = loadOFF(baseDir + filenameAverageMesh);
+	m_averageMesh.vertices /= 1000000.0f;
 	// load average shape feature points
 	FeaturePointExtractor averageFeatureExtractor(baseDir + filenameAverageMeshFeaturePoints, nullptr);
 	m_averageFeaturePoints = averageFeatureExtractor.m_points;
@@ -64,14 +64,14 @@ FaceModel::FaceModel(const std::string& baseDir) {
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
 {
 	assert(params.alpha.rows() == m_shapeBasis.cols() && "face parameter alpha has incorrect size");
-	return m_averageShapeMesh.vertices + m_shapeBasis * params.alpha;
+	return m_averageMesh.vertices + m_shapeBasis * params.alpha;
 }
 
 Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
 {
 	assert(params.beta.rows() == m_albedoBasis.cols() && "face parameter beta has incorrect size");
 	// interpolate RGB values as floats
-	Eigen::Matrix3Xf colorsRGB = m_averageShapeMesh.vertexColors.topRows<3>().cast<float>();
+	Eigen::Matrix3Xf colorsRGB = m_averageMesh.vertexColors.topRows<3>().cast<float>();
 	// reshape from matrix (3, numVertices) to vector (3 * numVertices)
 	Eigen::Map<Eigen::VectorXf> flatColorsRGB(colorsRGB.data(), 3 * getNumVertices());
 

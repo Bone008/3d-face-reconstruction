@@ -19,7 +19,7 @@ public:
 
 	// Vertex positions of the average face. Packed shape (3 * numVertices).
 	// TODO remove "shape" from name as it is not accurate
-	Mesh m_averageShapeMesh;
+	Mesh m_averageMesh;
 
 	// Orthogonal basis for the shape parameters alpha. Shape (3 * numVertices, numEigenVec)
 	Eigen::MatrixXf m_shapeBasis;
@@ -45,7 +45,7 @@ public:
 		return params;
 	}
 
-	unsigned int getNumVertices() const { return m_averageShapeMesh.vertices.rows() / 3; }
+	unsigned int getNumVertices() const { return m_averageMesh.vertices.rows() / 3; }
 	unsigned int getNumEigenVec() const { return m_shapeBasis.cols(); }
 	unsigned int getNumExprVec() const { return m_expressionBasis.cols(); }
 

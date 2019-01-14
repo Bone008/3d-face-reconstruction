@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 	// visualize final reconstruction (Steve)
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 	pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
-	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
+	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
 
 	std::vector<std::string> states;
 	states.emplace_back("Optimized");
@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
 		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
-		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
+		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
 	});
 
 	// Make camera look at the target.
