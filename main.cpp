@@ -80,7 +80,11 @@ int main(int argc, char **argv) {
 		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
 	});
 
-	viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
+	// Make camera look at the target.
+	Eigen::Vector4f objectOrigin = pose * Eigen::Vector4f(0, 0, 0, 1);
+	Eigen::Vector4f cameraPos = objectOrigin + Eigen::Vector4f(0, 0, -0.7f, 0);
+	viewer.setCameraPosition(cameraPos.x(), cameraPos.y(), cameraPos.z(), objectOrigin.x(), objectOrigin.y(), objectOrigin.z(), 0, -1, 0);
+
 	while (!viewer.wasStopped()) {
 		// TODO: react to input to modify params and call viewer.updatePointCloud(...)
 		viewer.spinOnce(500);
