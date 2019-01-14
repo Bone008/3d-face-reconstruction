@@ -144,8 +144,7 @@ private:
 		std::cout << "          Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
 		std::cout << "          Rasterization: project ..." << std::flush;
 
-		FaceParameters params;
-		params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
+		FaceParameters params = model.createDefaultParameters();
 		params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha, NUM_EIGEN_VEC).cast<float>();
 
 		VectorXf flatVertices = model.computeShape(params);
@@ -380,9 +379,9 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::cout << summary.FullReport() << std::endl;
 	std::cout << "Some final values of alpha: " << Map<VectorXd>(alpha.data(), 10) << std::endl;
 
-	FaceParameters params;
-	params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
+	FaceParameters params = model.createDefaultParameters();
 	params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha.data(), NUM_EIGEN_VEC).cast<float>();
+	params.beta.head<NUM_EIGEN_VEC>().setRandom();
 
 	return params;
 }

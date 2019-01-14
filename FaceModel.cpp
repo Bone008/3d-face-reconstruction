@@ -5,9 +5,20 @@
 const std::string filenameAverageMesh = "averageMesh.off";
 const std::string filenameAverageMeshFeaturePoints = "averageMesh_features.points";
 const std::string filenameBasisShape = "ShapeBasis.matrix";
+const std::string filenameBasisAlbedo = "AlbedoBasis.matrix";
 const std::string filenameBasisExpression = "ExpressionBasis.matrix";
 const std::string filenameStdDevShape = "StandardDeviationShape.vec";
 const std::string filenameStdDevExpression = "StandardDeviationExpression.vec";
+
+Eigen::MatrixXf discardEvery4thRow(const Eigen::Ref<const Eigen::MatrixXf>& matrix) {
+	assert(matrix.rows() % 4 == 0 && "matrix rows need to be a multiple of 4");
+	Eigen::Index numBlocks = matrix.rows() / 4;
+	Eigen::MatrixXf result(3 * numBlocks, matrix.cols());
+	for (int i = 0; i < numBlocks; i++) {
+		result.middleRows(3 * i, 3) = matrix.middleRows(4 * i, 3);
+	}
+	return result;
+}
 
 FaceModel::FaceModel(const std::string& baseDir) {
 	// load average shape
@@ -22,25 +33,23 @@ FaceModel::FaceModel(const std::string& baseDir) {
 	// load shape basis
 	std::vector<float> shapeBasisRaw = loadBinaryVector(baseDir + filenameBasisShape);
 	unsigned int nEigenVec = shapeBasisRaw.size() / (4 * nVertices);
-	// convert to matrix
-	Eigen::Map<Eigen::MatrixXf> shapeBasisVec4(shapeBasisRaw.data(), 4 * nVertices, nEigenVec);
+	Eigen::Map<Eigen::MatrixXf> shapeBasis4(shapeBasisRaw.data(), 4 * nVertices, nEigenVec);
+	m_shapeBasis = discardEvery4thRow(shapeBasis4);
 
-	// discard 4th vertex coordinate
-	m_shapeBasis.resize(3 * nVertices, nEigenVec);
-	for (int i = 0; i < nVertices; i++) {
-		m_shapeBasis.block(3 * i, 0, 3, nEigenVec) = shapeBasisVec4.block(4 * i, 0, 3, nEigenVec);
+	// load albedo basis
+	std::vector<float> albedoBasisRaw = loadBinaryVector(baseDir + filenameBasisAlbedo);
+	if (albedoBasisRaw.size() != shapeBasisRaw.size()) {
+		std::cout << "ERROR: Expected albedo basis to be the same size as shape basis." << std::endl;
+		exit(1);
 	}
+	Eigen::Map<Eigen::MatrixXf> albedoBasis4(albedoBasisRaw.data(), 4 * nVertices, nEigenVec);
+	m_albedoBasis = discardEvery4thRow(albedoBasis4);
 
+	// load expression basis
 	std::vector<float> expressionBasisRaw = loadBinaryVector(baseDir + filenameBasisExpression);
 	unsigned int nExpr = expressionBasisRaw.size() / (4 * nVertices);
-	// convert to matrix
-	Eigen::Map<Eigen::MatrixXf> expressionBasisVec4(expressionBasisRaw.data(), 4 * nVertices, nExpr);
-
-	// discard 4th vertex coordinate
-	m_expressionBasis.resize(3 * nVertices, nExpr);
-	for (int i = 0; i < nVertices; i++) {
-		m_expressionBasis.block(3 * i, 0, 3, nExpr) = expressionBasisVec4.block(4 * i, 0, 3, nExpr);
-	}
+	Eigen::Map<Eigen::MatrixXf> expressionBasis4(expressionBasisRaw.data(), 4 * nVertices, nExpr);
+	m_expressionBasis = discardEvery4thRow(expressionBasis4);
 
 	// not needed yet
 	/*
@@ -54,7 +63,25 @@ FaceModel::FaceModel(const std::string& baseDir) {
 
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
 {
+	assert(params.alpha.rows() == m_shapeBasis.cols() && "face parameter alpha has incorrect size");
 	return m_averageShapeMesh.vertices + m_shapeBasis * params.alpha;
+}
+
+Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
+{
+	assert(params.beta.rows() == m_albedoBasis.cols() && "face parameter beta has incorrect size");
+	// interpolate RGB values as floats
+	Eigen::Matrix3Xf colorsRGB = m_averageShapeMesh.vertexColors.topRows<3>().cast<float>();
+	// reshape from matrix (3, numVertices) to vector (3 * numVertices)
+	Eigen::Map<Eigen::VectorXf> flatColorsRGB(colorsRGB.data(), 3 * getNumVertices());
+
+	flatColorsRGB += m_albedoBasis * params.beta;
+
+	// convert back to RGBA int representation
+	Eigen::Matrix4Xi result(4, getNumVertices());
+	result.topRows<3>() = colorsRGB.cast<int>();
+	result.row(3).setConstant(255);
+	return result;
 }
 
 FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender) const

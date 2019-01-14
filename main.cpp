@@ -54,29 +54,30 @@ int main(int argc, char **argv) {
 	std::cout << "Optimizing parameters ..." << std::endl;
 	FaceParameters params = optimizeParameters(model, pose, inputSensor);
 	Eigen::VectorXf finalShape = model.computeShape(params);
+	Eigen::Matrix4Xi finalColors = model.computeColors(params);
 
 	std::cout << "Done!" << std::endl;
 
 	// visualize final reconstruction (Steve)
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+	pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
 	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
 
 	std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
 
+	FaceParameters defaultParams = model.createDefaultParameters();
+
 	SwitchControl sc(viewer, states, "", "Tab", [&](int state) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
-		FaceParameters newParams = params;
-		if (state == 1 /* Default */) {
-			newParams.alpha.setZero();
-		}
+		FaceParameters newParams = (state == 1 ? defaultParams : params);
 
 		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
 		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageShapeMesh.triangles), "steveMesh");
 	});
 
@@ -86,7 +87,6 @@ int main(int argc, char **argv) {
 	viewer.setCameraPosition(cameraPos.x(), cameraPos.y(), cameraPos.z(), objectOrigin.x(), objectOrigin.y(), objectOrigin.z(), 0, -1, 0);
 
 	while (!viewer.wasStopped()) {
-		// TODO: react to input to modify params and call viewer.updatePointCloud(...)
 		viewer.spinOnce(500);
 	}
 	return 0;
