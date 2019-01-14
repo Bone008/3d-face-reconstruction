@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
 	SwitchControl sc(viewer, states, "", "Tab", [&](int state) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
-		FaceParameters newParams = (state == 1 ? defaultParams : params);
+		FaceParameters newParams = (state == 0 ? params : defaultParams);
 
 		Eigen::VectorXf finalShape = model.computeShape(newParams);
 		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);

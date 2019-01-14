@@ -8,6 +8,7 @@ const std::string filenameBasisShape = "ShapeBasis.matrix";
 const std::string filenameBasisAlbedo = "AlbedoBasis.matrix";
 const std::string filenameBasisExpression = "ExpressionBasis.matrix";
 const std::string filenameStdDevShape = "StandardDeviationShape.vec";
+const std::string filenameStdDevAlbedo = "StandardDeviationAlbedo.vec";
 const std::string filenameStdDevExpression = "StandardDeviationExpression.vec";
 
 Eigen::MatrixXf discardEvery4thRow(const Eigen::Ref<const Eigen::MatrixXf>& matrix) {
@@ -28,7 +29,7 @@ FaceModel::FaceModel(const std::string& baseDir) {
 	FeaturePointExtractor averageFeatureExtractor(baseDir + filenameAverageMeshFeaturePoints, nullptr);
 	m_averageFeaturePoints = averageFeatureExtractor.m_points;
 
-	unsigned int nVertices = getNumVertices();
+	unsigned int nVertices = m_averageMesh.getNumVertices();
 
 	// load shape basis
 	std::vector<float> shapeBasisRaw = loadBinaryVector(baseDir + filenameBasisShape);
@@ -51,20 +52,16 @@ FaceModel::FaceModel(const std::string& baseDir) {
 	Eigen::Map<Eigen::MatrixXf> expressionBasis4(expressionBasisRaw.data(), 4 * nVertices, nExpr);
 	m_expressionBasis = discardEvery4thRow(expressionBasis4);
 
-	// not needed yet
-	/*
-	auto shapeDevRaw = new float[nEigenVec];
-	LoadVector(filenameStdDevShape, shapeDevRaw, nEigenVec);
-
-	auto expressionDevRaw = new float[nExpr];
-	LoadVector(filenameStdDevExpression, expressionDevRaw, nExpr);
-	*/
+	// load standard deviations
+	std::vector<float> shapeStdRaw = loadBinaryVector(baseDir + filenameStdDevShape);
+	m_shapeStd = Eigen::Map<Eigen::RowVectorXf>(shapeStdRaw.data(), shapeStdRaw.size());
 }
 
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
 {
 	assert(params.alpha.rows() == m_shapeBasis.cols() && "face parameter alpha has incorrect size");
-	return m_averageMesh.vertices + m_shapeBasis * params.alpha;
+	auto& scaledAlpha = (params.alpha.array() * m_shapeStd.array()).matrix();
+	return m_averageMesh.vertices + m_shapeBasis * scaledAlpha;
 }
 
 Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const

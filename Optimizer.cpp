@@ -13,8 +13,8 @@ const unsigned int NUM_EIGEN_VEC = 160;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
-	ResidualFunctor(const pcl::PointXYZRGB& inputPoint, const PixelData& rasterizerResult, const VectorXf& averageFaceVertices, const MatrixXf& shapeBasis, const Matrix4f& pose)
-		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), averageFaceVertices(averageFaceVertices), shapeBasis(shapeBasis), pose(pose) {}
+	ResidualFunctor(const pcl::PointXYZRGB& inputPoint, const PixelData& rasterizerResult, const FaceModel& model, const Matrix4f& pose)
+		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose) {}
 
 	template <typename T>
 	bool operator()(T const* alpha, T* residual) const {
@@ -35,16 +35,17 @@ struct ResidualFunctor {
 
 			// Vertex position of average face.
 			T pos[] = {
-				T(averageFaceVertices(3 * vertexIndex + 0)),
-				T(averageFaceVertices(3 * vertexIndex + 1)),
-				T(averageFaceVertices(3 * vertexIndex + 2)),
+				T(model.m_averageMesh.vertices(3 * vertexIndex + 0)),
+				T(model.m_averageMesh.vertices(3 * vertexIndex + 1)),
+				T(model.m_averageMesh.vertices(3 * vertexIndex + 2)),
 			};
 
 			// Displace by applying alpha.
 			for (int j = 0; j < NUM_EIGEN_VEC; j++) {
-				pos[0] += T(shapeBasis(3 * vertexIndex + 0, j)) * alpha[j];
-				pos[1] += T(shapeBasis(3 * vertexIndex + 1, j)) * alpha[j];
-				pos[2] += T(shapeBasis(3 * vertexIndex + 2, j)) * alpha[j];
+				T std = T(model.m_shapeStd(j));
+				pos[0] += T(model.m_shapeBasis(3 * vertexIndex + 0, j)) * std * alpha[j];
+				pos[1] += T(model.m_shapeBasis(3 * vertexIndex + 1, j)) * std * alpha[j];
+				pos[2] += T(model.m_shapeBasis(3 * vertexIndex + 2, j)) * std * alpha[j];
 			}
 
 			// Transform to world space.
@@ -72,10 +73,7 @@ private:
 	// Input pixel that this residual is computing.
 	const pcl::PointXYZRGB& inputPoint;
 
-	// Shape (3 * numVertices,)
-	const VectorXf& averageFaceVertices;
-	// Shape (3 * numVertices, numEigenVec)
-	const MatrixXf& shapeBasis;
+	const FaceModel& model;
 	const Matrix4f& pose;
 
 	// Rasterization result for this pixel.
@@ -85,7 +83,7 @@ private:
 struct RegularizerFunctor
 {
 	// TODO pass in from the outside
-	const float regStrength = 25.f;
+	const float regStrength = 0.01f;
 
 	template <typename T>
 	bool operator()(T const* alpha, T* residual) const {
@@ -354,7 +352,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 			}
 
 			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, 3, NUM_EIGEN_VEC>(
-				new ResidualFunctor(point, rasterResults[y * width + x], model.m_averageMesh.vertices, model.m_shapeBasis, pose));
+				new ResidualFunctor(point, rasterResults[y * width + x], model, pose));
 			problem.AddResidualBlock(costFunc, NULL, alpha.data());
 		}
 	}
@@ -370,7 +368,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	options.update_state_every_iteration = true;
 	options.linear_solver_type = ceres::LinearSolverType::DENSE_QR;
 	options.minimizer_type = ceres::MinimizerType::TRUST_REGION;
-	options.initial_trust_region_radius = 5e-3;
+	options.initial_trust_region_radius = 0.01;
 	options.max_trust_region_radius = 0.15;
 	options.callbacks.push_back(&rasterizerCallback);
 	ceres::Solver::Summary summary;
@@ -381,7 +379,6 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	FaceParameters params = model.createDefaultParameters();
 	params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha.data(), NUM_EIGEN_VEC).cast<float>();
-	params.beta.head<NUM_EIGEN_VEC>().setRandom();
 
 	return params;
 }

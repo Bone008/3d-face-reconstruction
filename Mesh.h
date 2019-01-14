@@ -5,4 +5,8 @@ struct Mesh {
 	Eigen::VectorXf vertices;
 	Eigen::Matrix4Xi vertexColors;
 	Eigen::Matrix3Xi triangles;
+
+	inline unsigned int getNumVertices() const {
+		return vertices.rows() / 3;
+	}
 };

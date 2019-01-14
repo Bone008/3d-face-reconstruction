@@ -2,7 +2,7 @@
 #include "Mesh.h"
 
 struct FaceParameters {
-	// Shape parameters.
+	// Shape parameters expressed as multiples of the standard deviation.
 	Eigen::VectorXf alpha;
 	// Albedo parameters.
 	Eigen::VectorXf beta;
@@ -28,6 +28,9 @@ public:
 	// Orthogonal basis for the expression parameters delta. Shape (3 * numVertices, numExprVec)
 	Eigen::MatrixXf m_expressionBasis;
 
+	// Standard deviation of the shape parameters alpha. Shape (numEigenVec)
+	Eigen::VectorXf m_shapeStd;
+
 
 	// Computes the vertex positions based on a set of parameters.
 	Eigen::VectorXf computeShape(const FaceParameters& params) const;
@@ -45,7 +48,7 @@ public:
 		return params;
 	}
 
-	unsigned int getNumVertices() const { return m_averageMesh.vertices.rows() / 3; }
+	unsigned int getNumVertices() const { return m_averageMesh.getNumVertices(); }
 	unsigned int getNumEigenVec() const { return m_shapeBasis.cols(); }
 	unsigned int getNumExprVec() const { return m_expressionBasis.cols(); }
 
