@@ -8,6 +8,8 @@
 // computed individually by the residual functors.
 struct PixelData {
 	int vertexIndices[3];
+	// Center of this pixel in screen space (x+0.5, y+0.5).
+	Eigen::Vector2f pixelCenter;
 	Eigen::Vector3f barycentricCoordinates;
 	Eigen::Vector3f albedo;
 	bool isValid;

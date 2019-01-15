@@ -10,8 +10,8 @@ using namespace Eigen;
 // Constant to allow better compile-time optimization.
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
-const unsigned int NUM_ALPHA_VEC = 80;
-const unsigned int NUM_BETA_VEC = 4;
+const unsigned int NUM_ALPHA_VEC = 160;
+const unsigned int NUM_BETA_VEC = 20;
 
 const unsigned int NUM_DENSE_RESIDUALS = 3 + 3;
 
@@ -22,7 +22,9 @@ struct ResidualFunctor {
 
 	template <typename T>
 	bool operator()(T const* alpha, T const* beta, T* residual) const {
+		typedef Matrix<T, 2, 1> Vector2T;
 		typedef Matrix<T, 3, 1> Vector3T;
+		typedef Matrix<T, 2, 2> Matrix2T;
 		typedef Matrix<T, 3, 3> Matrix3T;
 
 		if (!rasterizerResult.isValid) {
@@ -31,11 +33,9 @@ struct ResidualFunctor {
 			return true;
 		}
 
-		Vector3T worldPos = Vector3T::Zero();
-		Vector3T albedo = Vector3T::Zero();
-
 		Vector3T vertexWorldPositions[3];
 		Vector3T vertexAlbedos[3];
+		Vector2T vertexScreenPositions[3];
 
 		// For each vertex that is part of the triangle at this pixel.
 		for (int i = 0; i < 3; i++) {
@@ -59,26 +59,50 @@ struct ResidualFunctor {
 
 			// Transform to world space.
 			vertexWorldPositions[i] = pose.topLeftCorner<3, 3>().cast<T>() * pos + pose.topRightCorner<3, 1>().cast<T>();
-
-			// Accumulate using barycentric coords.
-			float barycentricFactor = rasterizerResult.barycentricCoordinates[i];
-			T b = T(barycentricFactor);
-			worldPos += b * vertexWorldPositions[i];
-			albedo += b * vertexAlbedos[i];
+			// Transform to screen space.
+			Vector3T projectedPos = intrinsics.cast<T>() * vertexWorldPositions[i];
+			vertexScreenPositions[i] = ((projectedPos.head<2>() / projectedPos.z()).array()).matrix();
 		}
 
-		Vector3T inputT = Vector3f(inputPoint.x, inputPoint.y, inputPoint.z).cast<T>();
-		Vector3T pointToPointDist = inputT - worldPos;
-		residual[0] = T(pointToPointDist(0));
-		residual[1] = T(pointToPointDist(1));
-		residual[2] = T(pointToPointDist(2));
+		// Compute barycentric coordinates from screen positions;
+		Matrix2T mT;
+		mT << (vertexScreenPositions[0] - vertexScreenPositions[2]),
+			(vertexScreenPositions[1] - vertexScreenPositions[2]);
+		Matrix2T mTi = mT.inverse();
+
+		Vector2T b = mTi * (rasterizerResult.pixelCenter.cast<T>() - vertexScreenPositions[2]);
+		T barycentricCoordinates[] = {
+			b(0),
+			b(1),
+			T(1.0f) - b(0) - b(1)
+		};
+
+		// Interpolate final values for this pixel.
+		Vector3T worldPos = Vector3T::Zero();
+		Vector3T albedo = Vector3T::Zero();
+		for (int i = 0; i < 3; i++) {
+			worldPos += barycentricCoordinates[i] * vertexWorldPositions[i];
+			albedo += barycentricCoordinates[i] * vertexAlbedos[i];
+		}
+
+		Vector3T inputPos = Vector3T(T(inputPoint.x), T(inputPoint.y), T(inputPoint.z));
+		Vector3T pointToPointDist = inputPos - worldPos;
+		residual[0] = pointToPointDist(0);
+		residual[1] = pointToPointDist(1);
+		residual[2] = pointToPointDist(2);
 		// TODO: point to plane distance, but for this we need normals
 
-		//T colorScaling = T(1.f / 255.f);
-		//residual[3] = colorScaling * (T(inputPoint.r) - albedo[0] + T(colorDelta(0)));
-		//residual[4] = colorScaling * (T(inputPoint.g) - albedo[1] + T(colorDelta(1)));
-		//residual[5] = colorScaling * (T(inputPoint.b) - albedo[2] + T(colorDelta(2)));
-		std::fill(residual + 3, residual + 6, T(0));
+		Vector3T inputCol = Vector3T(T(inputPoint.r), T(inputPoint.g), T(inputPoint.b));
+		T colorScaling = T(1.f / 255.f);
+		Vector3T colorDist = (inputCol - albedo + colorDelta.cast<T>()) / T(255.0f);
+		residual[3] = colorDist(0);
+		residual[4] = colorDist(1);
+		residual[5] = colorDist(2);
+
+		// Color residuals are disabled for now unti they work properly ...
+		residual[3] = T(0);
+		residual[4] = T(0);
+		residual[5] = T(0);
 		return true;
 	}
 
@@ -99,7 +123,7 @@ struct RegularizerFunctor
 {
 	// TODO pass in from the outside
 	const float regStrengthAlpha = 0.01f;
-	const float regStrengthBeta = 0.001f;
+	const float regStrengthBeta = 0.1f;
 
 	template <typename T>
 	bool operator()(T const* alpha, T const* beta, T* residual) const {
@@ -238,7 +262,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	}
 
 	// Add regularization error term.
-	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_ALPHA_VEC+NUM_BETA_VEC, NUM_ALPHA_VEC, NUM_BETA_VEC>(new RegularizerFunctor());
+	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_ALPHA_VEC + NUM_BETA_VEC, NUM_ALPHA_VEC, NUM_BETA_VEC>(new RegularizerFunctor());
 	problem.AddResidualBlock(regFunc, NULL, alpha.data(), beta.data());
 
 	std::cout << "Cost function has " << problem.NumResidualBlocks() << " residual blocks." << std::endl;

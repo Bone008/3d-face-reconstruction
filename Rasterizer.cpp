@@ -88,7 +88,8 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 				pos = (pos - 0.5f) * 2.0f;
 
 				Vector3f baryCoords = bary(pos.matrix());*/
-				Vector3f baryCoords = bary(Vector2f(x + 0.5f, y + 0.5f));
+				Vector2f pixelCenter(x + 0.5f, y + 0.5f);
+				Vector3f baryCoords = bary(pixelCenter);
 
 				if ((baryCoords.array() <= 1.0f).all() && (baryCoords.array() >= 0.0f).all()) {
 					float depth = baryCoords.dot(Vector3f(v0.z(), v1.z(), v2.z()));
@@ -96,6 +97,7 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 						depthBuffer(x, y) = depth;
 						PixelData& out = pixelResults[y * frameSize.x() + x];
 						out.isValid = true;
+						out.pixelCenter = pixelCenter;
 						out.vertexIndices[0] = indices(0);
 						out.vertexIndices[1] = indices(1);
 						out.vertexIndices[2] = indices(2);
