@@ -117,6 +117,20 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 }
 
 
+Vector3f Rasterizer::getAverageColor() {
+	size_t num = 0;
+	Vector3f colorSum;
+	colorSum.setZero();
+	for (const PixelData& pixel : pixelResults) {
+		if (pixel.isValid) {
+			num++;
+			colorSum += pixel.albedo;
+		}
+	}
+	return colorSum / num;
+}
+
+
 void Rasterizer::writeDebugImages() {
 	std::cout << " saving bmp ..." << std::flush;
 	BMP bmp(frameSize.x(), frameSize.y());
@@ -142,10 +156,11 @@ void Rasterizer::writeDebugImages() {
 		bmp.data[4 * i + 0] = depthCol[2];
 		bmp.data[4 * i + 3] = depthCol[3];
 
-		Array4i col(0, 0, 0, 0);
+		Array4i col(0, 0, 0, 255);
 		auto& result = pixelResults[i];
-		if (result.isValid)
+		if (result.isValid) {
 			col.head<3>() = result.albedo.cast<int>();
+		}
 
 		bmpCol.data[4 * i + 2] = col[0];
 		bmpCol.data[4 * i + 1] = col[1];
@@ -158,8 +173,4 @@ void Rasterizer::writeDebugImages() {
 	bmp.write(filename);
 	sprintf(filename, "ecolmap_%d.bmp", numCalls);
 	bmpCol.write(filename);
-}
-
-Vector3f Rasterizer::getAverageColor() {
-	return Vector3f();
 }

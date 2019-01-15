@@ -223,6 +223,17 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
+	pcl::PointXYZRGB centroid;
+	pcl::computeCentroid(*croppedCloud, centroid);
+	Vector3f inputAverageCol = Vector3f(centroid.r, centroid.g, centroid.b);
+	Vector3f modelAverageCol = rasterizer.getAverageColor();
+	// Contains the RGB difference due to lighting from the input face to the synthetic face.
+	Vector3f colorDelta = modelAverageCol - inputAverageCol;
+
+	std::cout << "| input average: " << inputAverageCol.transpose() << std::endl;
+	std::cout << "| model average: " << modelAverageCol.transpose() << std::endl;
+	std::cout << "|        delta: " << colorDelta.transpose() << std::endl;
+
 	ceres::Problem problem;
 	for (unsigned int y = 0; y < height; y += 2) {
 		for (unsigned int x = 0; x < width; x += 2) {
