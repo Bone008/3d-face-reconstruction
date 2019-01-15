@@ -11,87 +11,74 @@ using namespace Eigen;
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
 const unsigned int NUM_ALPHA_VEC = 80;
-const unsigned int NUM_BETA_VEC = 20;
+const unsigned int NUM_BETA_VEC = 4;
 
 const unsigned int NUM_DENSE_RESIDUALS = 3 + 3;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
-	ResidualFunctor(const pcl::PointXYZRGB& inputPoint, const PixelData& rasterizerResult, const FaceModel& model, const Matrix4f& pose)
-		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose) {}
+	ResidualFunctor(const pcl::PointXYZRGB& inputPoint, const PixelData& rasterizerResult, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics, const Vector3f& colorDelta)
+		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose), intrinsics(intrinsics), colorDelta(colorDelta) {}
 
 	template <typename T>
 	bool operator()(T const* alpha, T const* beta, T* residual) const {
+		typedef Matrix<T, 3, 1> Vector3T;
+		typedef Matrix<T, 3, 3> Matrix3T;
+
 		if (!rasterizerResult.isValid) {
 			// Skip pixels where Steve isn't rendered into.
 			std::fill(residual, residual + NUM_DENSE_RESIDUALS, T(0));
 			return true;
 		}
 
-		T worldPos[] = { T(0), T(0), T(0) };
-		T albedo[] = { T(0), T(0), T(0) };
+		Vector3T worldPos = Vector3T::Zero();
+		Vector3T albedo = Vector3T::Zero();
+
+		Vector3T vertexWorldPositions[3];
+		Vector3T vertexAlbedos[3];
 
 		// For each vertex that is part of the triangle at this pixel.
 		for (int i = 0; i < 3; i++) {
 			int vertexIndex = rasterizerResult.vertexIndices[i];
-			float barycentricFactor = rasterizerResult.barycentricCoordinates[i];
-
-			// Vertex position of average face.
-			T pos[] = {
-				T(model.m_averageMesh.vertices(3 * vertexIndex + 0)),
-				T(model.m_averageMesh.vertices(3 * vertexIndex + 1)),
-				T(model.m_averageMesh.vertices(3 * vertexIndex + 2)),
-			};
-
-			// Displace by applying alpha.
-			for (int j = 0; j < NUM_ALPHA_VEC; j++) {
-				T std = T(model.m_shapeStd(j));
-				pos[0] += T(model.m_shapeBasis(3 * vertexIndex + 0, j)) * std * alpha[j];
-				pos[1] += T(model.m_shapeBasis(3 * vertexIndex + 1, j)) * std * alpha[j];
-				pos[2] += T(model.m_shapeBasis(3 * vertexIndex + 2, j)) * std * alpha[j];
-			}
-
-			// Transform to world space.
-			T vertexWorldPos[] = {
-				T(pose(0,0)) * pos[0] + T(pose(0,1)) * pos[1] + T(pose(0,2)) * pos[2] + T(pose(0,3)),
-				T(pose(1,0)) * pos[0] + T(pose(1,1)) * pos[1] + T(pose(1,2)) * pos[2] + T(pose(1,3)),
-				T(pose(2,0)) * pos[0] + T(pose(2,1)) * pos[1] + T(pose(2,2)) * pos[2] + T(pose(2,3)),
-			};
 
 			// Albedo of average face (ignore alpha).
-			T vertexAlbedo[] = {
-				T(model.m_averageMesh.vertexColors(0, vertexIndex)),
-				T(model.m_averageMesh.vertexColors(1, vertexIndex)),
-				T(model.m_averageMesh.vertexColors(2, vertexIndex)),
-			};
-
+			vertexAlbedos[i] = model.m_averageMesh.vertexColors.col(vertexIndex).head<3>().cast<T>();
 			// Apply beta to albedo.
 			for (int j = 0; j < NUM_BETA_VEC; j++) {
 				T std = T(model.m_albedoStd(j));
-				vertexAlbedo[0] += T(model.m_albedoBasis(3 * vertexIndex + 0, j)) * std * beta[j];
-				vertexAlbedo[1] += T(model.m_albedoBasis(3 * vertexIndex + 1, j)) * std * beta[j];
-				vertexAlbedo[2] += T(model.m_albedoBasis(3 * vertexIndex + 2, j)) * std * beta[j];
+				vertexAlbedos[i] += model.m_albedoBasis.block(3 * vertexIndex, j, 3, 1).cast<T>() * std * beta[j];
 			}
 
+			// Vertex position of average face.
+			Vector3T pos = model.m_averageMesh.vertices.segment(3 * vertexIndex, 3).cast<T>();
+			// Displace by applying alpha.
+			for (int j = 0; j < NUM_ALPHA_VEC; j++) {
+				T std = T(model.m_shapeStd(j));
+				pos += model.m_shapeBasis.block(3 * vertexIndex, j, 3, 1).cast<T>() * std * alpha[j];
+			}
+
+			// Transform to world space.
+			vertexWorldPositions[i] = pose.topLeftCorner<3, 3>().cast<T>() * pos + pose.topRightCorner<3, 1>().cast<T>();
+
 			// Accumulate using barycentric coords.
+			float barycentricFactor = rasterizerResult.barycentricCoordinates[i];
 			T b = T(barycentricFactor);
-			worldPos[0] += b * vertexWorldPos[0];
-			worldPos[1] += b * vertexWorldPos[1];
-			worldPos[2] += b * vertexWorldPos[2];
-			albedo[0] += b * vertexAlbedo[0];
-			albedo[1] += b * vertexAlbedo[1];
-			albedo[2] += b * vertexAlbedo[2];
+			worldPos += b * vertexWorldPositions[i];
+			albedo += b * vertexAlbedos[i];
 		}
 
-		residual[0] = T(inputPoint.x) - worldPos[0];
-		residual[1] = T(inputPoint.y) - worldPos[1];
-		residual[2] = T(inputPoint.z) - worldPos[2];
+		Vector3T inputT = Vector3f(inputPoint.x, inputPoint.y, inputPoint.z).cast<T>();
+		Vector3T pointToPointDist = inputT - worldPos;
+		residual[0] = T(pointToPointDist(0));
+		residual[1] = T(pointToPointDist(1));
+		residual[2] = T(pointToPointDist(2));
 		// TODO: point to plane distance, but for this we need normals
 
-		T colorScaling = T(1.f / 255.f);
-		residual[3] = colorScaling * (T(inputPoint.r) - albedo[0]);
-		residual[4] = colorScaling * (T(inputPoint.g) - albedo[1]);
-		residual[5] = colorScaling * (T(inputPoint.b) - albedo[2]);
+		//T colorScaling = T(1.f / 255.f);
+		//residual[3] = colorScaling * (T(inputPoint.r) - albedo[0] + T(colorDelta(0)));
+		//residual[4] = colorScaling * (T(inputPoint.g) - albedo[1] + T(colorDelta(1)));
+		//residual[5] = colorScaling * (T(inputPoint.b) - albedo[2] + T(colorDelta(2)));
+		std::fill(residual + 3, residual + 6, T(0));
 		return true;
 	}
 
@@ -101,6 +88,8 @@ private:
 
 	const FaceModel& model;
 	const Matrix4f& pose;
+	const Matrix3f& intrinsics;
+	const Vector3f& colorDelta;
 
 	// Rasterization result for this pixel.
 	const PixelData& rasterizerResult;
@@ -110,7 +99,7 @@ struct RegularizerFunctor
 {
 	// TODO pass in from the outside
 	const float regStrengthAlpha = 0.01f;
-	const float regStrengthBeta = 0.1f;
+	const float regStrengthBeta = 0.001f;
 
 	template <typename T>
 	bool operator()(T const* alpha, T const* beta, T* residual) const {
@@ -243,7 +232,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 			}
 
 			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC>(
-				new ResidualFunctor(point, rasterizer.pixelResults[y * width + x], model, pose));
+				new ResidualFunctor(point, rasterizer.pixelResults[y * width + x], model, pose, inputSensor.m_cameraIntrinsics, colorDelta));
 			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data());
 		}
 	}
@@ -266,12 +255,13 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	ceres::Solve(options, &problem, &summary);
 
 	std::cout << summary.FullReport() << std::endl;
-	std::cout << "Some final values of alpha: " << Map<VectorXd>(alpha.data(), 10) << std::endl;
-	std::cout << "Some final values of beta: " << Map<VectorXd>(beta.data(), 10) << std::endl;
 
 	FaceParameters params = model.createDefaultParameters();
 	params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha.data(), NUM_ALPHA_VEC).cast<float>();
 	params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta.data(), NUM_BETA_VEC).cast<float>();
+
+	std::cout << "Some final values of alpha: " << params.alpha.head<10>().transpose() << std::endl;
+	std::cout << "Some final values of beta: " << params.beta.head<10>().transpose() << std::endl;
 
 	return params;
 }
