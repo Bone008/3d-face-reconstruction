@@ -4,7 +4,7 @@
 
 class SwitchControl {
 public:
-    SwitchControl(pcl::visualization::PCLVisualizer& viewer, std::vector<std::string> states, std::string keyBackward, std::string keyForward, std::function<void(int)> callee);
+    SwitchControl(pcl::visualization::PCLVisualizer& viewer, std::vector<std::string> states, std::string keyBackward, std::string keyForward, std::function<void(int,const std::vector<int>&)> callee);
 
 private:
     static int s_currentY;
@@ -13,4 +13,7 @@ private:
 
     int m_numStates;
     int m_currentState;
+
+    int m_selectedProp = 0;
+    std::vector<int> m_props = std::vector<int>{0,0,0};
 };

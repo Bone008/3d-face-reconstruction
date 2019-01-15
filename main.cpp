@@ -69,13 +69,14 @@ int main(int argc, char **argv) {
 
 	FaceParameters defaultParams = model.createDefaultParameters();
 
-	SwitchControl sc(viewer, states, "", "Tab", [&](int state) {
+	SwitchControl sc(viewer, states, "", "Tab", [&](int state, const std::vector<int>&props) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
 		FaceParameters newParams = (state == 0 ? params : defaultParams);
+		FaceParameters outparams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
 
-		Eigen::VectorXf finalShape = model.computeShape(newParams);
-		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
+		Eigen::VectorXf finalShape = model.computeShape(outparams);
+		Eigen::Matrix4Xi finalColors = model.computeColors(outparams);
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
 		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
