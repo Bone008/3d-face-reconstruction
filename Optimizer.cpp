@@ -9,7 +9,10 @@ using namespace Eigen;
 // Constant to allow better compile-time optimization.
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
-const unsigned int NUM_EIGEN_VEC = 160;
+const unsigned int NUM_ALPHA_VEC = 80;
+const unsigned int NUM_BETA_VEC = 20;
+
+const unsigned int NUM_DENSE_RESIDUALS = 3 + 3;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
@@ -17,16 +20,15 @@ struct ResidualFunctor {
 		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose) {}
 
 	template <typename T>
-	bool operator()(T const* alpha, T* residual) const {
+	bool operator()(T const* alpha, T const* beta, T* residual) const {
 		if (!rasterizerResult.isValid) {
 			// Skip pixels where Steve isn't rendered into.
-			residual[0] = T(0);
-			residual[1] = T(0);
-			residual[2] = T(0);
+			std::fill(residual, residual + NUM_DENSE_RESIDUALS, T(0));
 			return true;
 		}
 
-		T worldSpacePixel[] = { T(0), T(0), T(0) };
+		T worldPos[] = { T(0), T(0), T(0) };
+		T albedo[] = { T(0), T(0), T(0) };
 
 		// For each vertex that is part of the triangle at this pixel.
 		for (int i = 0; i < 3; i++) {
@@ -41,7 +43,7 @@ struct ResidualFunctor {
 			};
 
 			// Displace by applying alpha.
-			for (int j = 0; j < NUM_EIGEN_VEC; j++) {
+			for (int j = 0; j < NUM_ALPHA_VEC; j++) {
 				T std = T(model.m_shapeStd(j));
 				pos[0] += T(model.m_shapeBasis(3 * vertexIndex + 0, j)) * std * alpha[j];
 				pos[1] += T(model.m_shapeBasis(3 * vertexIndex + 1, j)) * std * alpha[j];
@@ -49,23 +51,46 @@ struct ResidualFunctor {
 			}
 
 			// Transform to world space.
-			T worldPos[] = {
+			T vertexWorldPos[] = {
 				T(pose(0,0)) * pos[0] + T(pose(0,1)) * pos[1] + T(pose(0,2)) * pos[2] + T(pose(0,3)),
 				T(pose(1,0)) * pos[0] + T(pose(1,1)) * pos[1] + T(pose(1,2)) * pos[2] + T(pose(1,3)),
 				T(pose(2,0)) * pos[0] + T(pose(2,1)) * pos[1] + T(pose(2,2)) * pos[2] + T(pose(2,3)),
 			};
 
-			worldSpacePixel[0] += T(barycentricFactor) * worldPos[0];
-			worldSpacePixel[1] += T(barycentricFactor) * worldPos[1];
-			worldSpacePixel[2] += T(barycentricFactor) * worldPos[2];
+			// Albedo of average face (ignore alpha).
+			T vertexAlbedo[] = {
+				T(model.m_averageMesh.vertexColors(0, vertexIndex)),
+				T(model.m_averageMesh.vertexColors(1, vertexIndex)),
+				T(model.m_averageMesh.vertexColors(2, vertexIndex)),
+			};
+
+			// Apply beta to albedo.
+			for (int j = 0; j < NUM_BETA_VEC; j++) {
+				T std = T(model.m_albedoStd(j));
+				vertexAlbedo[0] += T(model.m_albedoBasis(3 * vertexIndex + 0, j)) * std * beta[j];
+				vertexAlbedo[1] += T(model.m_albedoBasis(3 * vertexIndex + 1, j)) * std * beta[j];
+				vertexAlbedo[2] += T(model.m_albedoBasis(3 * vertexIndex + 2, j)) * std * beta[j];
+			}
+
+			// Accumulate using barycentric coords.
+			T b = T(barycentricFactor);
+			worldPos[0] += b * vertexWorldPos[0];
+			worldPos[1] += b * vertexWorldPos[1];
+			worldPos[2] += b * vertexWorldPos[2];
+			albedo[0] += b * vertexAlbedo[0];
+			albedo[1] += b * vertexAlbedo[1];
+			albedo[2] += b * vertexAlbedo[2];
 		}
 
-		residual[0] = T(inputPoint.x) - worldSpacePixel[0];
-		residual[1] = T(inputPoint.y) - worldSpacePixel[1];
-		residual[2] = T(inputPoint.z) - worldSpacePixel[2];
-
+		residual[0] = T(inputPoint.x) - worldPos[0];
+		residual[1] = T(inputPoint.y) - worldPos[1];
+		residual[2] = T(inputPoint.z) - worldPos[2];
 		// TODO: point to plane distance, but for this we need normals
-		// TODO: compare colors once we process albedo
+
+		T colorScaling = T(1.f / 255.f);
+		residual[3] = colorScaling * (T(inputPoint.r) - albedo[0]);
+		residual[4] = colorScaling * (T(inputPoint.g) - albedo[1]);
+		residual[5] = colorScaling * (T(inputPoint.b) - albedo[2]);
 		return true;
 	}
 
@@ -83,13 +108,18 @@ private:
 struct RegularizerFunctor
 {
 	// TODO pass in from the outside
-	const float regStrength = 0.01f;
+	const float regStrengthAlpha = 0.01f;
+	const float regStrengthBeta = 0.1f;
 
 	template <typename T>
-	bool operator()(T const* alpha, T* residual) const {
-		T factor = T(regStrength / NUM_EIGEN_VEC);
-		for (size_t i = 0; i < NUM_EIGEN_VEC; i++) {
+	bool operator()(T const* alpha, T const* beta, T* residual) const {
+		T factor = T(regStrengthAlpha / NUM_ALPHA_VEC);
+		for (size_t i = 0; i < NUM_ALPHA_VEC; i++) {
 			residual[i] = factor * alpha[i];
+		}
+		factor = T(regStrengthBeta / NUM_BETA_VEC);
+		for (size_t i = 0; i < NUM_BETA_VEC; i++) {
+			residual[NUM_ALPHA_VEC + i] = factor * beta[i];
 		}
 		return true;
 	}
@@ -114,12 +144,14 @@ public:
 };
 
 struct RasterizerFunctor : public ceres::IterationCallback {
-	RasterizerFunctor(std::vector<PixelData>& rasterizerResults, const Array2i frameSize, const double* alpha, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics)
-		: rasterizerResults(rasterizerResults), frameSize(frameSize), alpha(alpha), model(model), pose(pose), intrinsics(intrinsics) {}
+	RasterizerFunctor(std::vector<PixelData>& rasterizerResults, const Array2i frameSize, const double* alpha, const double* beta, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics)
+		: rasterizerResults(rasterizerResults), frameSize(frameSize), alpha(alpha), beta(beta), model(model), pose(pose), intrinsics(intrinsics) {}
 
 	virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
-		const Matrix3Xf& projectedVertices = project();
-		rasterize(projectedVertices);
+		Matrix3Xf projectedVertices;
+		Matrix4Xi vertexAlbedos;
+		project(projectedVertices, vertexAlbedos);
+		rasterize(projectedVertices, vertexAlbedos);
 		numCalls++;
 		return ceres::CallbackReturnType::SOLVER_CONTINUE;
 	}
@@ -129,6 +161,7 @@ private:
 	int numCalls = 0;
 
 	const double* alpha;
+	const double* beta;
 	const FaceModel& model;
 	const Matrix4f& pose;
 	const Matrix3f& intrinsics;
@@ -138,22 +171,25 @@ private:
 	std::vector<PixelData>& rasterizerResults;
 	const Array2i frameSize;
 
-	Matrix3Xf project() {
+	void project(Matrix3Xf& outProjectedVertices, Matrix4Xi& outVertexAlbedos) {
 		std::cout << "          Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
+		std::cout << "          Beta: " << beta[0] << "," << beta[1] << "," << beta[2] << "," << beta[3] << ", etc." << std::endl;
 		std::cout << "          Rasterization: project ..." << std::flush;
 
 		FaceParameters params = model.createDefaultParameters();
-		params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha, NUM_EIGEN_VEC).cast<float>();
+		params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
+		params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
 
 		VectorXf flatVertices = model.computeShape(params);
 		Matrix3Xf worldVertices = pose.topLeftCorner<3, 3>() * Map<Matrix3Xf>(flatVertices.data(), 3, model.getNumVertices());
 		worldVertices.colwise() += pose.topRightCorner<3, 1>();
 
 		// Project to screen space.
-		return intrinsics * worldVertices;
+		outProjectedVertices = intrinsics * worldVertices;
+		outVertexAlbedos = model.computeColors(params);
 	}
 
-	void rasterize(const Matrix3Xf& projectedVertices) {
+	void rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi vertexAlbedos) {
 		// Reset output.
 		std::fill(rasterizerResults.begin(), rasterizerResults.end(), PixelData());
 
@@ -245,7 +281,7 @@ private:
 				col << 0, 0, 0, 0;
 				for (int v = 0; v < 3; v++) {
 					float bary = result.barycentricCoordinates(v);
-					auto& vcol = model.m_averageMesh.vertexColors.col(result.vertexIndices[v]);
+					auto& vcol = vertexAlbedos.col(result.vertexIndices[v]);
 					col += bary * vcol.array().cast<float>();
 				}
 
@@ -303,7 +339,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	const uint32_t width = croppedCloud->width;
 	const uint32_t height = croppedCloud->height;
 
-	std::array<double, NUM_EIGEN_VEC> alpha{};
+	std::array<double, NUM_ALPHA_VEC> alpha{};
+	std::array<double, NUM_BETA_VEC> beta{};
 	std::vector<PixelData> rasterResults(width * height);
 
 	{
@@ -339,7 +376,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
-	RasterizerFunctor rasterizerCallback(rasterResults, { width, height }, alpha.data(), model, pose, inputSensor.m_cameraIntrinsics);
+	RasterizerFunctor rasterizerCallback(rasterResults, { width, height }, alpha.data(), beta.data(), model, pose, inputSensor.m_cameraIntrinsics);
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
@@ -351,15 +388,15 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 				continue;
 			}
 
-			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, 3, NUM_EIGEN_VEC>(
+			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC>(
 				new ResidualFunctor(point, rasterResults[y * width + x], model, pose));
-			problem.AddResidualBlock(costFunc, NULL, alpha.data());
+			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data());
 		}
 	}
 
 	// Add regularization error term.
-	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_EIGEN_VEC, NUM_EIGEN_VEC>(new RegularizerFunctor());
-	problem.AddResidualBlock(regFunc, NULL, alpha.data());
+	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_ALPHA_VEC+NUM_BETA_VEC, NUM_ALPHA_VEC, NUM_BETA_VEC>(new RegularizerFunctor());
+	problem.AddResidualBlock(regFunc, NULL, alpha.data(), beta.data());
 
 	std::cout << "Cost function has " << problem.NumResidualBlocks() << " residual blocks." << std::endl;
 
@@ -376,9 +413,11 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	std::cout << summary.FullReport() << std::endl;
 	std::cout << "Some final values of alpha: " << Map<VectorXd>(alpha.data(), 10) << std::endl;
+	std::cout << "Some final values of beta: " << Map<VectorXd>(beta.data(), 10) << std::endl;
 
 	FaceParameters params = model.createDefaultParameters();
-	params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha.data(), NUM_EIGEN_VEC).cast<float>();
+	params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha.data(), NUM_ALPHA_VEC).cast<float>();
+	params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta.data(), NUM_BETA_VEC).cast<float>();
 
 	return params;
 }
