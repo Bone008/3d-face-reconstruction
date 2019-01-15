@@ -30,8 +30,6 @@ SwitchControl::SwitchControl(pcl::visualization::PCLVisualizer& viewer, std::vec
         if (!keyEvent.keyUp())
             return;
 
-        std::cout << keyEvent.getKeySym() << std::endl;
-
         int dir = 0;
         if (keyEvent.getKeySym() == keyBackward)
             dir = -1;
