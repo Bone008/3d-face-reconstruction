@@ -35,12 +35,12 @@ void OpenNI2Sensor::capturePointCloudToFile(const std::string& filenamePcd) {
     PointCloudT outputCloud;
 
     // callback when cloud is available
-    interface->registerCallback<void(PointCloudT)>(([&](const PointCloudT& cloud) {
+    interface->registerCallback<void(const PointCloudT&)>([&](const PointCloudT& cloud) {
         if (!viewer.wasStopped()) {
             viewer.showCloud(cloud);
             outputCloud = cloud;
         }
-    }));
+    });
 
     // start capturing point clouds
     interface->start ();
