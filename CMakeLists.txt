@@ -47,6 +47,7 @@ set(HEADER_FILES
 		Mesh.h
 		FaceModel.h
 		Optimizer.h
+        Rasterizer.h
 		Sensor.h
 		stdafx.h
 		utils.h
@@ -56,6 +57,7 @@ set(SOURCE_FILES
 		CoarseAlignment.cpp
 		FaceModel.cpp
 		Optimizer.cpp
+        Rasterizer.cpp
 		main.cpp
 		utils.cpp
         SwitchControl.cpp)

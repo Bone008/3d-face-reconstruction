@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include <pcl/filters/crop_box.h>
 #include "Optimizer.h"
+#include "Rasterizer.h"
 #include "BMP.h"
 #include "utils.h"
 
@@ -125,181 +126,23 @@ struct RegularizerFunctor
 	}
 };
 
-struct BarycentricTransform {
-private:
-	Vector2f offset;
-	Matrix2f Ti;
-public:
-	BarycentricTransform(const Vector2f& s0, const Vector2f& s1, const Vector2f& s2) :
-		offset(s2) {
-		Matrix2f T;
-		T << (s0 - s2), (s1 - s2);
-		Ti = T.inverse();
-	}
-	Vector3f operator()(const Vector2f& v) const {
-		Vector2f b;
-		b = Ti * (v - offset);
-		return Vector3f(b[0], b[1], 1.0f - b[0] - b[1]);
-	}
-};
-
 struct RasterizerFunctor : public ceres::IterationCallback {
-	RasterizerFunctor(std::vector<PixelData>& rasterizerResults, const Array2i frameSize, const double* alpha, const double* beta, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics)
-		: rasterizerResults(rasterizerResults), frameSize(frameSize), alpha(alpha), beta(beta), model(model), pose(pose), intrinsics(intrinsics) {}
+	RasterizerFunctor(Rasterizer& rasterizer, const double* alpha, const double* beta)
+		: alpha(alpha), beta(beta), rasterizer(rasterizer) {}
 
 	virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
-		Matrix3Xf projectedVertices;
-		Matrix4Xi vertexAlbedos;
-		project(projectedVertices, vertexAlbedos);
-		rasterize(projectedVertices, vertexAlbedos);
-		numCalls++;
+		FaceParameters params = rasterizer.model.createDefaultParameters();
+		params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
+		params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
+
+		rasterizer.compute(params);
 		return ceres::CallbackReturnType::SOLVER_CONTINUE;
 	}
 
 private:
-	// How many times this rasterizer has been invoked so far.
-	int numCalls = 0;
-
+	Rasterizer& rasterizer;
 	const double* alpha;
 	const double* beta;
-	const FaceModel& model;
-	const Matrix4f& pose;
-	const Matrix3f& intrinsics;
-
-	// Output of the rasterization for all pixels (barycentric coordinates and vertex indices).
-	// Stores info about pixels in row-major order, so pixel (x,y) is at index (y*width + x).
-	std::vector<PixelData>& rasterizerResults;
-	const Array2i frameSize;
-
-	void project(Matrix3Xf& outProjectedVertices, Matrix4Xi& outVertexAlbedos) {
-		std::cout << "          Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
-		std::cout << "          Beta: " << beta[0] << "," << beta[1] << "," << beta[2] << "," << beta[3] << ", etc." << std::endl;
-		std::cout << "          Rasterization: project ..." << std::flush;
-
-		FaceParameters params = model.createDefaultParameters();
-		params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
-		params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
-
-		VectorXf flatVertices = model.computeShape(params);
-		Matrix3Xf worldVertices = pose.topLeftCorner<3, 3>() * Map<Matrix3Xf>(flatVertices.data(), 3, model.getNumVertices());
-		worldVertices.colwise() += pose.topRightCorner<3, 1>();
-
-		// Project to screen space.
-		outProjectedVertices = intrinsics * worldVertices;
-		outVertexAlbedos = model.computeColors(params);
-	}
-
-	void rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi vertexAlbedos) {
-		// Reset output.
-		std::fill(rasterizerResults.begin(), rasterizerResults.end(), PixelData());
-
-		std::cout << " rasterize ..." << std::flush;
-
-		ArrayXXf depthBuffer(frameSize.x(), frameSize.y());
-		depthBuffer.setConstant(std::numeric_limits<float>::infinity());
-
-		const Matrix3Xi& triangles = model.m_averageMesh.triangles;
-
-		for (size_t t = 0; t < triangles.cols(); t++) {
-			const auto& indices = triangles.col(t);
-			Vector3f v0 = projectedVertices.col(indices(0));
-			Vector3f v1 = projectedVertices.col(indices(1));
-			Vector3f v2 = projectedVertices.col(indices(2));
-
-			// Get vertices in pixel space.
-			auto s0 = ((v0.head<2>() / v0.z()).array()).matrix();
-			auto s1 = ((v1.head<2>() / v1.z()).array()).matrix();
-			auto s2 = ((v2.head<2>() / v2.z()).array()).matrix();
-
-			// Calculate bounds of triangle on screen.
-			Array2i boundsMinPx = s0.array().min(s1.array()).min(s2.array()).cast<int>();
-			Array2i boundsMaxPx = s0.array().max(s1.array()).max(s2.array()).cast<int>();
-			//Array2i boundsMinPx = ((0.5f*boundsMin + 0.5f) * frameSize.cast<float>()).cast<int>();
-			//Array2i boundsMaxPx = ((0.5f*boundsMax + 0.5f) * frameSize.cast<float>()).cast<int>();
-			boundsMaxPx += 1;
-
-			// Clip to actual frame buffer region.
-			boundsMinPx = boundsMinPx.max(Array2i(0, 0));
-			boundsMaxPx = boundsMaxPx.min(frameSize);
-
-			BarycentricTransform bary(s0, s1, s2);
-
-			for (int y = boundsMinPx.y(); y < boundsMaxPx.y(); y++) {
-				for (int x = boundsMinPx.x(); x < boundsMaxPx.x(); x++) {
-					/*Array2f pos(x, y);
-					pos /= frameSize.cast<float>();
-					pos = (pos - 0.5f) * 2.0f;
-
-					Vector3f baryCoords = bary(pos.matrix());*/
-					Vector3f baryCoords = bary(Vector2f(x + 0.5f, y + 0.5f));
-
-					if ((baryCoords.array() <= 1.0f).all() && (baryCoords.array() >= 0.0f).all()) {
-						float depth = baryCoords.dot(Vector3f(v0.z(), v1.z(), v2.z()));
-						if (depth < depthBuffer(x, y)) {
-							depthBuffer(x, y) = depth;
-							PixelData& out = rasterizerResults[y * frameSize.x() + x];
-							out.isValid = true;
-							out.vertexIndices[0] = indices(0);
-							out.vertexIndices[1] = indices(1);
-							out.vertexIndices[2] = indices(2);
-							out.barycentricCoordinates = baryCoords;
-						}
-					}
-				}
-			}
-		}
-
-		size_t filledPx = std::count_if(rasterizerResults.begin(), rasterizerResults.end(), [](const PixelData& px) { return px.isValid; });
-		std::cout << " (valid pixels: " << filledPx << ")";
-
-		{
-			std::cout << " saving bmp ..." << std::flush;
-			BMP bmp(frameSize.x(), frameSize.y());
-			BMP bmpCol(frameSize.x(), frameSize.y());
-			// replace infinity values in buffer with 0
-			for (size_t i = 0; i < depthBuffer.size(); i++) {
-				if (std::isinf(depthBuffer.data()[i]))
-					depthBuffer.data()[i] = 0;
-			}
-			const float scale = depthBuffer.maxCoeff();
-			for (int i = 0; i < depthBuffer.size(); i++) {
-				Array4i depthCol;
-				if (depthBuffer.data()[i] == 0) {
-					depthCol = Array4i(0, 0, 30, 255);
-				}
-				else {
-					int c = int(depthBuffer.data()[i] / scale * 255);
-					depthCol = Array4i(c, c, c, 255);
-				}
-				bmp.data[4 * i + 2] = depthCol[0];
-				bmp.data[4 * i + 1] = depthCol[1];
-				bmp.data[4 * i + 0] = depthCol[2];
-				bmp.data[4 * i + 3] = depthCol[3];
-
-				auto& result = rasterizerResults[i];
-				Array4f col;
-				col << 0, 0, 0, 0;
-				for (int v = 0; v < 3; v++) {
-					float bary = result.barycentricCoordinates(v);
-					auto& vcol = vertexAlbedos.col(result.vertexIndices[v]);
-					col += bary * vcol.array().cast<float>();
-				}
-
-				bmpCol.data[4 * i + 2] = col[0];
-				bmpCol.data[4 * i + 1] = col[1];
-				bmpCol.data[4 * i + 0] = col[2];
-				bmpCol.data[4 * i + 3] = col[3];
-			}
-
-			char filename[100];
-			sprintf(filename, "depthmap_%d.bmp", numCalls);
-			bmp.write(filename);
-			sprintf(filename, "ecolmap_%d.bmp", numCalls);
-			bmpCol.write(filename);
-		}
-
-		std::cout << " done!" << std::endl;
-	}
 };
 
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
@@ -341,7 +184,6 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	std::array<double, NUM_ALPHA_VEC> alpha{};
 	std::array<double, NUM_BETA_VEC> beta{};
-	std::vector<PixelData> rasterResults(width * height);
 
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;
@@ -376,7 +218,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
-	RasterizerFunctor rasterizerCallback(rasterResults, { width, height }, alpha.data(), beta.data(), model, pose, inputSensor.m_cameraIntrinsics);
+	Rasterizer rasterizer({ width, height }, model, pose, inputSensor.m_cameraIntrinsics);
+	RasterizerFunctor rasterizerCallback(rasterizer, alpha.data(), beta.data());
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
@@ -389,7 +232,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 			}
 
 			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC>(
-				new ResidualFunctor(point, rasterResults[y * width + x], model, pose));
+				new ResidualFunctor(point, rasterizer.pixelResults[y * width + x], model, pose));
 			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data());
 		}
 	}
