@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Settings.h"
 #include "VirtualSensor.h"
 #include "FaceModel.h"
 #include "CoarseAlignment.h"
@@ -16,6 +17,7 @@ const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
 const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
 const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
 
+Settings gSettings;
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
 void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::vector<Eigen::Vector3f> &featurePoints,
@@ -38,21 +40,59 @@ void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::
     viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 10, name);
 }
 
-
 int main(int argc, char **argv) {
-	std::cout << "Loading face model ..." << std::endl;
-	FaceModel model(baseModelDir);
+	try {
+		cxxopts::Options options(argv[0], "Program to reconstruct faces from RGB-D images.");
+		options.add_options()
+			("help", "Print help.")
+			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile))
+			("o,skip-optimization", "Enable fine optimization of face parameters.", cxxopts::value(gSettings.skipOptimization))
+			("r,reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha))
+			("initial-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize))
+			("s,max-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize))
+			;
+		options.parse_positional("input");
+		options.show_positional_help();
+
+		auto result = options.parse(argc, argv);
+		if (result.count("help")) {
+			std::cout << options.help() << std::endl;
+			return 0;
+		}
+	}
+	catch (cxxopts::OptionException e) {
+		std::cerr << e.what() << std::endl;
+		return -2;
+	}
+
+	std::string inputFace = gSettings.inputFile;
+	std::string inputFeatures = inputFace.substr(0, inputFace.length() - 3) + "points";
 	std::cout << "Loading input data ..." << std::endl;
-	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
+	std::cout << "    Input file: " << inputFace << std::endl;
+	Sensor inputSensor = VirtualSensor(inputFace, inputFeatures);
 	
 	// visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
+	viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "inputCloud");
 	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
-	
+
+
+	std::cout << "Loading face model ..." << std::endl;
+	FaceModel model(baseModelDir);
+
 	std::cout << "Coarse alignment ..." << std::endl;
 	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
-	std::cout << "Optimizing parameters ..." << std::endl;
-	FaceParameters params = optimizeParameters(model, pose, inputSensor);
+	
+	FaceParameters params;
+	if (gSettings.skipOptimization) {
+		std::cout << "Skipping parameter optimization." << std::endl;
+		params = model.createDefaultParameters();
+	}
+	else {
+		std::cout << "Optimizing parameters ..." << std::endl;
+		params = optimizeParameters(model, pose, inputSensor);
+	}
+
 	Eigen::VectorXf finalShape = model.computeShape(params);
 	Eigen::Matrix4Xi finalColors = model.computeColors(params);
 

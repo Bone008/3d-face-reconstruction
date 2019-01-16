@@ -4,6 +4,7 @@
 #include "Rasterizer.h"
 #include "BMP.h"
 #include "utils.h"
+#include "Settings.h"
 
 using namespace Eigen;
 
@@ -121,17 +122,13 @@ private:
 
 struct RegularizerFunctor
 {
-	// TODO pass in from the outside
-	const float regStrengthAlpha = 0.01f;
-	const float regStrengthBeta = 0.1f;
-
 	template <typename T>
 	bool operator()(T const* alpha, T const* beta, T* residual) const {
-		T factor = T(regStrengthAlpha / NUM_ALPHA_VEC);
+		T factor = T(gSettings.regStrengthAlpha / NUM_ALPHA_VEC);
 		for (size_t i = 0; i < NUM_ALPHA_VEC; i++) {
 			residual[i] = factor * alpha[i];
 		}
-		factor = T(regStrengthBeta / NUM_BETA_VEC);
+		factor = T(gSettings.regStrengthBeta / NUM_BETA_VEC);
 		for (size_t i = 0; i < NUM_BETA_VEC; i++) {
 			residual[NUM_ALPHA_VEC + i] = factor * beta[i];
 		}
@@ -200,6 +197,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;
+		int warnCount = 0;
 		BMP bmp(width, height);
 		for (unsigned int y = 0; y < height; y++) {
 			for (unsigned int x = 0; x < width; x++) {
@@ -211,8 +209,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 				int sx = int(s.x() + 0.5f);
 				int sy = int(s.y() + 0.5f);
 
-				if (sx != x || sy != y) {
-					std::cout << "(" << x << "," << y << ") goes to (" << sx << "," << sy << ")" << std::endl;
+				if ((sx != x || sy != y) && warnCount++ < 10) {
+					std::cout << "    (" << x << "," << y << ") goes to (" << sx << "," << sy << ")" << std::endl;
 				}
 
 				if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
@@ -272,8 +270,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	options.update_state_every_iteration = true;
 	options.linear_solver_type = ceres::LinearSolverType::DENSE_QR;
 	options.minimizer_type = ceres::MinimizerType::TRUST_REGION;
-	options.initial_trust_region_radius = 0.01;
-	options.max_trust_region_radius = 0.15;
+	options.initial_trust_region_radius = gSettings.initialStepSize;
+	options.max_trust_region_radius = gSettings.maxStepSize;
 	options.callbacks.push_back(&rasterizerCallback);
 	ceres::Solver::Summary summary;
 	ceres::Solve(options, &problem, &summary);

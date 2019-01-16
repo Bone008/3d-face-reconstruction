@@ -7,6 +7,7 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <random>
 #include <sstream>
+#include "cxxopts.hpp"
 
 #define GLOG_NO_ABBREVIATED_SEVERITIES
 #include <ceres/ceres.h>

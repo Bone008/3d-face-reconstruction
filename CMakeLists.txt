@@ -40,6 +40,8 @@ include_directories(${CERES_INCLUDE_DIRS})
 
 # Set files to be compiled
 set(HEADER_FILES
+        cxxopts.hpp
+        Settings.h
 		CoarseAlignment.h
 		FeaturePointExtractor.h
 		ProcrustesAligner.h
