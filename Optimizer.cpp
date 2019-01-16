@@ -61,7 +61,7 @@ struct ResidualFunctor {
 			vertexWorldPositions[i] = pose.topLeftCorner<3, 3>().cast<T>() * pos + pose.topRightCorner<3, 1>().cast<T>();
 			// Transform to screen space.
 			Vector3T projectedPos = intrinsics.cast<T>() * vertexWorldPositions[i];
-			vertexScreenPositions[i] = ((projectedPos.head<2>() / projectedPos.z()).array()).matrix();
+			vertexScreenPositions[i] = ((projectedPos.template head<2>() / projectedPos.z()).array()).matrix();
 		}
 
 		// Compute barycentric coordinates from screen positions;
