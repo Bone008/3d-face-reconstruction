@@ -74,6 +74,9 @@ if (MSVC)
 	    PROPERTIES
 	    COMPILE_FLAGS "/Ycstdafx.h"
 	)
+    
+    # Enable link time code generation, as Ceres binaries require it.
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG:INCREMENTAL")
 endif()
 
 add_executable(face_reconstruction ${HEADER_FILES} ${SOURCE_FILES})
