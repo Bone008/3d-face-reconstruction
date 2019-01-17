@@ -17,11 +17,11 @@ const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
 const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
 const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
 
-// TODO run visualizer on own thread
 // TODO add switch for feature points (on/off)
 // TODO add switches again after changing viewports
 // TODO visualize intermediate output during optimization
 // TODO add switch for different intermediate outputs
+// TODO show progress on screen
 Visualizer visualizer;
 
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr getFeaturePointPcl(std::vector<Eigen::Vector3f> &featurePoints) {
@@ -43,34 +43,42 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr getFeaturePointPcl(std::vector<Eigen::Vec
 
 
 int main(int argc, char **argv) {
-    std::cout << "Loading face model ..." << std::endl;
-	FaceModel model(baseModelDir);
+	// load input point cloud (John)
 	std::cout << "Loading input data ..." << std::endl;
 	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
-
-	// visualize input point cloud (John)
 	visualizer.setJohnPcl(inputSensor.m_cloud);
 	visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
+	visualizer.runOnce();
 
-	std::cout << "Coarse alignment ..." << std::endl;
-	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
-	std::cout << "Optimizing parameters ..." << std::endl;
-	FaceParameters params = optimizeParameters(model, pose, inputSensor);
-	Eigen::VectorXf finalShape = model.computeShape(params);
+	FaceModel* model;
+    FaceParameters params;
+	Eigen::Matrix4f pose;
+    boost::thread optimizingThread([&]() {
+		// load face model (Steve)
+		std::cout << "Loading face model ..." << std::endl;
+		model = new FaceModel(baseModelDir);
+		visualizer.setSteveVertices(trianglesToVertexList(model->m_averageShapeMesh.triangles));
 
-	std::cout << "Done!" << std::endl;
+        std::cout << "Coarse alignment ..." << std::endl;
+        pose = computeCoarseAlignment(*model, inputSensor);
 
-	// visualize final reconstruction (Steve)
-	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
-	visualizer.setStevePcl(transformedCloud);
-	visualizer.setSteveVertices(trianglesToVertexList(model.m_averageShapeMesh.triangles));
+        std::cout << "Optimizing parameters ..." << std::endl;
+        params = optimizeParameters(*model, pose, inputSensor);
+		Eigen::VectorXf finalShape = model->computeShape(params);
+        std::cout << "Done!" << std::endl;
+
+        // visualize final reconstruction (Steve)
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        pcl::transformPointCloud(*pointsToCloud(finalShape, model->m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+        visualizer.setStevePcl(transformedCloud);
+    });
 
 	// add switch (optimized/default)
 	std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
 
+	// TODO add to visualizer from optimizer thread
 	SwitchControl sc(visualizer.getViewer(), states, "", "Tab", [&](int state) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
@@ -79,13 +87,14 @@ int main(int argc, char **argv) {
 			newParams.alpha.setZero();
 		}
 
-		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		Eigen::VectorXf finalShape = model->computeShape(newParams);
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, model.m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+		pcl::transformPointCloud(*pointsToCloud(finalShape, model->m_averageShapeMesh.vertexColors), *transformedCloud, pose);
 		visualizer.setStevePcl(transformedCloud);
 	});
 
 	visualizer.run();
+	optimizingThread.join();
 
 	return 0;
 }
