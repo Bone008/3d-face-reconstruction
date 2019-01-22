@@ -41,13 +41,13 @@ int main(int argc, char **argv) {
 		cxxopts::Options options(argv[0], "Program to reconstruct faces from RGB-D images.");
 		options.add_options()
 			("help", "Print help.")
-			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile))
-			("o,skip-optimization", "Enable fine optimization of face parameters.", cxxopts::value(gSettings.skipOptimization))
-			("opt-stride", "Pixel stride for fine optimization.", cxxopts::value(gSettings.optimizationStride))
-			("r,reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha))
-			("reg-beta", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthBeta))
-			("initial-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize))
-			("s,max-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize))
+			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile)->default_value("../data/rgbd_face_dataset/006_00_cloud.pcd"))
+			("o,skip-optimization", "Skip fine optimization of face parameters completely.", cxxopts::value(gSettings.skipOptimization)->default_value("false"))
+			("opt-stride", "Pixel stride for fine optimization (>= 1).", cxxopts::value(gSettings.optimizationStride)->default_value("2"))
+			("s,opt-step", "Initial trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize)->default_value("0.1"))
+			("S,opt-max-step", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize)->default_value("0.25"))
+			("r,opt-reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha)->default_value("1.0"))
+			("R,opt-reg-beta", "Regularization strength for beta parameters.", cxxopts::value(gSettings.regStrengthBeta)->default_value("1.0"))
 			;
 		options.parse_positional("input");
 		options.positional_help("[input]").show_positional_help();

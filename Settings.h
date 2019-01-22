@@ -2,15 +2,15 @@
 
 // Stores command line parameters.
 struct Settings {
-	std::string inputFile = "../data/rgbd_face_dataset/006_00_cloud.pcd";
+	std::string inputFile;
 	
-	bool skipOptimization = false;
+	bool skipOptimization;
 	
-	unsigned int optimizationStride = 2;
-	float regStrengthAlpha = 1.0f;
-	float regStrengthBeta = 1.0f;
-	double initialStepSize = 0.1;
-	double maxStepSize = 0.25;
+	unsigned int optimizationStride;
+	float regStrengthAlpha;
+	float regStrengthBeta;
+	double initialStepSize;
+	double maxStepSize;
 };
 
 extern Settings gSettings;
