@@ -20,8 +20,7 @@ const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.p
 Settings gSettings;
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
-void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::vector<Eigen::Vector3f> &featurePoints,
-                            const std::string &name) {
+void highlightFeaturePoints(std::vector<Eigen::Vector3f> &featurePoints, const std::string &name) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr points_to_highlight(new pcl::PointCloud<pcl::PointXYZRGB>);
 
     for (auto const &point: featurePoints) {
@@ -74,7 +73,7 @@ int main(int argc, char **argv) {
 	// visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
 	viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "inputCloud");
-	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
+	highlightFeaturePoints(inputSensor.m_featurePoints, "inputCloudFeatures");
 
 
 	std::cout << "Loading face model ..." << std::endl;
