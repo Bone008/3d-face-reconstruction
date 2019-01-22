@@ -13,9 +13,6 @@
 #include "SwitchControl.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
-const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
-const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
-const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
 
 Settings gSettings;
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
