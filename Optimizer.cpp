@@ -12,7 +12,7 @@ using namespace Eigen;
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
 const unsigned int NUM_ALPHA_VEC = 160;
-const unsigned int NUM_BETA_VEC = 20;
+const unsigned int NUM_BETA_VEC = 80;
 
 const unsigned int NUM_DENSE_RESIDUALS = 4 + 3;
 
@@ -101,11 +101,6 @@ struct ResidualFunctor {
 		residual[3] = colorDist(0);
 		residual[4] = colorDist(1);
 		residual[5] = colorDist(2);
-
-		// Color residuals are disabled for now unti they work properly ...
-		residual[3] = T(0);
-		residual[4] = T(0);
-		residual[5] = T(0);
 		return true;
 	}
 

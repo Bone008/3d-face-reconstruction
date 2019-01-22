@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
 			("o,skip-optimization", "Enable fine optimization of face parameters.", cxxopts::value(gSettings.skipOptimization))
 			("opt-stride", "Pixel stride for fine optimization.", cxxopts::value(gSettings.optimizationStride))
 			("r,reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha))
+			("reg-beta", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthBeta))
 			("initial-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize))
 			("s,max-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize))
 			;

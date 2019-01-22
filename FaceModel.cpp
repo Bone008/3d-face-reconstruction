@@ -45,6 +45,8 @@ FaceModel::FaceModel(const std::string& baseDir) {
 	}
 	Eigen::Map<Eigen::MatrixXf> albedoBasis4(albedoBasisRaw.data(), 4 * nVertices, nEigenVec);
 	m_albedoBasis = discardEvery4thRow(albedoBasis4);
+	// Rescale, since we apply beta to color values in [0, 255] and not [0, 1].
+	m_albedoBasis *= 255.0f;
 
 	// load expression basis
 	std::vector<float> expressionBasisRaw = loadBinaryVector(baseDir + filenameBasisExpression);
@@ -78,6 +80,26 @@ Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
 
 	auto& scaledBeta = (params.beta.array() * m_albedoStd.array()).matrix();
 	flatColorsRGB += m_albedoBasis * scaledBeta;
+
+	// Clamp between 0 and 255.
+	int numClamped = 0;
+	for (size_t i = 0; i < colorsRGB.cols(); i++) {
+		bool wasClamped = false;
+		for (size_t c = 0; c < 3; c++) {
+			if (colorsRGB(c, i) < 0) {
+				wasClamped = true;
+				colorsRGB(c, i) = 0;
+			}
+			else if (colorsRGB(c, i) > 255) {
+				wasClamped = true;
+				colorsRGB(c, i) = 255;
+			}
+		}
+		numClamped += int(wasClamped);
+	}
+	if (numClamped > 0) {
+		std::cout << "Warning: Clamped " << numClamped << "/" << colorsRGB.cols() << " vertex colors when applying beta." << std::endl;
+	}
 
 	// convert back to RGBA int representation
 	Eigen::Matrix4Xi result(4, getNumVertices());
