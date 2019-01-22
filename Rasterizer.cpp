@@ -30,13 +30,14 @@ void Rasterizer::compute(const FaceParameters& params) {
 
 	Matrix3Xf projectedVertices;
 	Matrix4Xi vertexAlbedos;
-	project(params, projectedVertices, vertexAlbedos);
-	rasterize(projectedVertices, vertexAlbedos);
+	Matrix3Xf worldNormals;
+	project(params, projectedVertices, vertexAlbedos, worldNormals);
+	rasterize(projectedVertices, vertexAlbedos, worldNormals);
 
 	numCalls++;
 }
 
-void Rasterizer::project(const FaceParameters& params, Matrix3Xf& outProjectedVertices, Matrix4Xi& outVertexAlbedos) {
+void Rasterizer::project(const FaceParameters& params, Matrix3Xf& outProjectedVertices, Matrix4Xi& outVertexAlbedos, Matrix3Xf& outWorldNormals) {
 	VectorXf flatVertices = model.computeShape(params);
 	Matrix3Xf worldVertices = pose.topLeftCorner<3, 3>() * Map<Matrix3Xf>(flatVertices.data(), 3, model.getNumVertices());
 	worldVertices.colwise() += pose.topRightCorner<3, 1>();
@@ -44,9 +45,10 @@ void Rasterizer::project(const FaceParameters& params, Matrix3Xf& outProjectedVe
 	// Project to screen space.
 	outProjectedVertices = intrinsics * worldVertices;
 	outVertexAlbedos = model.computeColors(params);
+	outWorldNormals = model.computeNormals(params, worldVertices);
 }
 
-void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& vertexAlbedos) {
+void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals) {
 	// Reset output.
 	std::fill(pixelResults.begin(), pixelResults.end(), PixelData());
 
@@ -55,6 +57,8 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 	ArrayXXf depthBuffer(frameSize.x(), frameSize.y());
 	depthBuffer.setConstant(std::numeric_limits<float>::infinity());
 
+	Vector3f L = Vector3f(0, 0, -1);
+
 	const Matrix3Xi& triangles = model.m_averageMesh.triangles;
 
 	for (size_t t = 0; t < triangles.cols(); t++) {
@@ -62,6 +66,10 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 		Vector3f v0 = projectedVertices.col(indices(0));
 		Vector3f v1 = projectedVertices.col(indices(1));
 		Vector3f v2 = projectedVertices.col(indices(2));
+
+		Vector3f n0 = worldNormals.col(indices(0));
+		Vector3f n1 = worldNormals.col(indices(1));
+		Vector3f n2 = worldNormals.col(indices(2));
 
 		// Get vertices in pixel space.
 		auto s0 = ((v0.head<2>() / v0.z()).array()).matrix();
@@ -102,10 +110,19 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 						out.vertexIndices[1] = indices(1);
 						out.vertexIndices[2] = indices(2);
 						out.barycentricCoordinates = baryCoords;
+
+						/*Vector3f n = baryCoords(0) * n0 + baryCoords(1) * n1 + baryCoords(2) * n2;
+						n.normalize();
+
+						float E = n.dot(L) * 255.0f;*/
+
 						out.albedo =
 							baryCoords(0) * vertexAlbedos.col(indices(0)).head<3>().cast<float>() +
 							baryCoords(1) * vertexAlbedos.col(indices(1)).head<3>().cast<float>() +
 							baryCoords(2) * vertexAlbedos.col(indices(2)).head<3>().cast<float>();
+
+						//out.albedo = Vector3f(E, E, E);
+
 					}
 				}
 			}

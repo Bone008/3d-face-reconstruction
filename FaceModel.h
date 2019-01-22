@@ -41,6 +41,9 @@ public:
 	// Computes the vertex colors based on a set of parameters.
 	Eigen::Matrix4Xi computeColors(const FaceParameters& params) const;
 
+    // Computes the vertex positions based on a set of parameters.
+    Eigen::Matrix3Xf computeNormals(const FaceParameters& params, const Eigen::Matrix3Xf& worldVertices) const;
+
 	FaceParameters computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender) const;
 
 	inline FaceParameters createDefaultParameters() const {

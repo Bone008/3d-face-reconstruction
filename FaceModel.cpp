@@ -86,6 +86,36 @@ Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
 	return result;
 }
 
+Eigen::Matrix3Xf FaceModel::computeNormals(const FaceParameters& params, const Eigen::Matrix3Xf& worldVertices) const
+{
+	int numVertices = getNumVertices();
+
+	Eigen::Matrix3Xf normals = Eigen::Matrix3Xf::Zero(3, numVertices);
+	//Eigen::VectorXi numFaces = Eigen::VectorXi::Zero(numVertices);
+
+	int numTriangles = m_averageMesh.triangles.cols();
+	for (int t=0;t<numTriangles;++t)
+	{
+		const auto& indices = m_averageMesh.triangles.col(t);
+		Eigen::Vector3f v0 = worldVertices.col(indices(0));
+		Eigen::Vector3f v1 = worldVertices.col(indices(1));
+		Eigen::Vector3f v2 = worldVertices.col(indices(2));
+
+		Eigen::Vector3f n = (v1-v0).cross(v2-v0).normalized();
+
+		normals.col(indices(0)) += n;
+		normals.col(indices(1)) += n;
+		normals.col(indices(2)) += n;
+	}
+
+	for (int i=0;i<numVertices;++i)
+	{
+		normals.col(i).normalize();
+	}
+
+	return normals;
+}
+
 FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender) const
 {
 	FaceParameters outparams = params;

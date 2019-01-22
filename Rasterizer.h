@@ -35,8 +35,8 @@ private:
 	int numCalls = 0;
 	Eigen::ArrayXXf depthBuffer;
 
-	void project(const FaceParameters& params, Eigen::Matrix3Xf& outProjectedVertices, Eigen::Matrix4Xi& outVertexAlbedos);
-	void rasterize(const Eigen::Matrix3Xf& projectedVertices, const Eigen::Matrix4Xi& vertexAlbedos);
+	void project(const FaceParameters& params, Eigen::Matrix3Xf& outProjectedVertices, Eigen::Matrix4Xi& outVertexAlbedos, Eigen::Matrix3Xf& outWorldNormals);
+	void rasterize(const Eigen::Matrix3Xf& projectedVertices, const Eigen::Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals);
 
 	void writeDebugImages();
 };
