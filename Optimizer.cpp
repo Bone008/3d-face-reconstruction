@@ -14,11 +14,11 @@ using namespace Eigen;
 const unsigned int NUM_ALPHA_VEC = 160;
 const unsigned int NUM_BETA_VEC = 20;
 
-const unsigned int NUM_DENSE_RESIDUALS = 3 + 3;
+const unsigned int NUM_DENSE_RESIDUALS = 4 + 3;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
-	ResidualFunctor(const pcl::PointXYZRGB& inputPoint, const PixelData& rasterizerResult, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics, const Vector3f& colorDelta)
+	ResidualFunctor(const pcl::PointXYZRGBNormal& inputPoint, const PixelData& rasterizerResult, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics, const Vector3f& colorDelta)
 		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose), intrinsics(intrinsics), colorDelta(colorDelta) {}
 
 	template <typename T>
@@ -91,7 +91,9 @@ struct ResidualFunctor {
 		residual[0] = pointToPointDist(0);
 		residual[1] = pointToPointDist(1);
 		residual[2] = pointToPointDist(2);
+
 		// TODO: point to plane distance, but for this we need normals
+		residual[6] = pointToPointDist(0)*T(inputPoint.normal_x) + pointToPointDist(1)*T(inputPoint.normal_y) + pointToPointDist(2)*T(inputPoint.normal_z);
 
 		Vector3T inputCol = Vector3T(T(inputPoint.r), T(inputPoint.g), T(inputPoint.b));
 		T colorScaling = T(1.f / 255.f);
@@ -109,7 +111,7 @@ struct ResidualFunctor {
 
 private:
 	// Input pixel that this residual is computing.
-	const pcl::PointXYZRGB& inputPoint;
+	const pcl::PointXYZRGBNormal& inputPoint;
 
 	const FaceModel& model;
 	const Matrix4f& pose;
@@ -155,7 +157,7 @@ private:
 	const double* beta;
 };
 
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
+pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
 	pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr inputCloud,
 	const Matrix4f& pose,
 	const FaceModel& model)
@@ -183,7 +185,50 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
 
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr out(new pcl::PointCloud<pcl::PointXYZRGB>);
 	boxFilter.filter(*out);
-	return out;
+	// load point cloud
+	pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+	cloud = out;
+	// estimate normals
+	pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+
+	pcl::IntegralImageNormalEstimation<pcl::PointXYZRGB, pcl::Normal> ne;
+	ne.setInputCloud(cloud);
+	ne.setNormalEstimationMethod(pcl::IntegralImageNormalEstimation<pcl::PointXYZRGB, pcl::Normal>::COVARIANCE_MATRIX);
+	ne.setNormalSmoothingSize(10.0f);
+	ne.setDepthDependentSmoothing(true);
+	ne.compute(*normals);
+	
+	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr dst(new pcl::PointCloud<pcl::PointXYZRGBNormal>); // To be created
+	std::cout << "1" << endl;
+	// Initialization part
+	dst->width = out->width;
+	std::cout << "2" << endl;
+	dst->height = out->height;
+	std::cout << "3" << endl;
+	dst->is_dense = true;
+	std::cout << "4" << endl;
+	dst->points.resize(dst->width * dst->height);
+	std::cout << "intialisation pointNormal" << endl;
+	// Assignment part
+	for (int i = 0; i < normals->points.size(); i++)
+	{
+		dst->points.at(i).x = out->points.at(i).x;
+		dst->points.at(i).y = out->points.at(i).y;
+		dst->points.at(i).z = out->points.at(i).z;
+
+		dst->points.at(i).r = out->points.at(i).r;
+		dst->points.at(i).g = out->points.at(i).g;
+		dst->points.at(i).b = out->points.at(i).b;
+
+		// cloud_normals -> Which you have already have; generated using pcl example code 
+
+		dst->points.at(i).curvature = normals->points[i].curvature;
+
+		dst->points.at(i).normal_x = normals->points[i].normal_x;
+		dst->points.at(i).normal_y = normals->points[i].normal_y;
+		dst->points.at(i).normal_z = normals->points[i].normal_z;
+	}
+	return dst;
 }
 
 FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor) {
@@ -234,7 +279,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
-	pcl::PointXYZRGB centroid;
+	pcl::PointXYZRGBNormal centroid;
 	pcl::computeCentroid(*croppedCloud, centroid);
 	Vector3f inputAverageCol = Vector3f(centroid.r, centroid.g, centroid.b);
 	Vector3f modelAverageCol = rasterizer.getAverageColor();
@@ -248,11 +293,13 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	ceres::Problem problem;
 	for (unsigned int y = 0; y < height; y += 2) {
 		for (unsigned int x = 0; x < width; x += 2) {
-			const pcl::PointXYZRGB& point = (*croppedCloud)(x, y);
+			const pcl::PointXYZRGBNormal& point = (*croppedCloud)(x, y);
 			if (std::isnan(point.z)) {
 				continue;
 			}
-
+			if (std::isnan(point.normal_x)) {
+				continue;
+			}
 			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC>(
 				new ResidualFunctor(point, rasterizer.pixelResults[y * width + x], model, pose, inputSensor.m_cameraIntrinsics, colorDelta));
 			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data());
