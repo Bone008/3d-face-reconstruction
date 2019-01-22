@@ -43,12 +43,13 @@ int main(int argc, char **argv) {
 			("help", "Print help.")
 			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile))
 			("o,skip-optimization", "Enable fine optimization of face parameters.", cxxopts::value(gSettings.skipOptimization))
+			("opt-stride", "Pixel stride for fine optimization.", cxxopts::value(gSettings.optimizationStride))
 			("r,reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha))
 			("initial-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize))
 			("s,max-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize))
 			;
 		options.parse_positional("input");
-		options.show_positional_help();
+		options.positional_help("[input]").show_positional_help();
 
 		auto result = options.parse(argc, argv);
 		if (result.count("help")) {

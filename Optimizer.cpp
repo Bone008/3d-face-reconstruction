@@ -290,9 +290,11 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::cout << "| model average: " << modelAverageCol.transpose() << std::endl;
 	std::cout << "|        delta: " << colorDelta.transpose() << std::endl;
 
+
 	ceres::Problem problem;
-	for (unsigned int y = 0; y < height; y += 2) {
-		for (unsigned int x = 0; x < width; x += 2) {
+	unsigned int stride = gSettings.optimizationStride;
+	for (unsigned int y = 0; y < height; y += stride) {
+		for (unsigned int x = 0; x < width; x += stride) {
 			const pcl::PointXYZRGBNormal& point = (*croppedCloud)(x, y);
 			if (std::isnan(point.z)) {
 				continue;
