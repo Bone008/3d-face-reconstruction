@@ -6,6 +6,7 @@ struct Settings {
 	
 	bool skipOptimization = false;
 	
+	unsigned int optimizationStride = 2;
 	float regStrengthAlpha = 1.0f;
 	float regStrengthBeta = 1.0f;
 	double initialStepSize = 0.1;

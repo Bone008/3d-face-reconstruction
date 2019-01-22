@@ -13,15 +13,11 @@
 #include "SwitchControl.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
-const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
-const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
-const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
 
 Settings gSettings;
 pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
-void highlightFeaturePoints(pcl::PointCloud<pcl::PointXYZRGB>::Ptr &cloud, std::vector<Eigen::Vector3f> &featurePoints,
-                            const std::string &name) {
+void highlightFeaturePoints(std::vector<Eigen::Vector3f> &featurePoints, const std::string &name) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr points_to_highlight(new pcl::PointCloud<pcl::PointXYZRGB>);
 
     for (auto const &point: featurePoints) {
@@ -47,12 +43,13 @@ int main(int argc, char **argv) {
 			("help", "Print help.")
 			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile))
 			("o,skip-optimization", "Enable fine optimization of face parameters.", cxxopts::value(gSettings.skipOptimization))
+			("opt-stride", "Pixel stride for fine optimization.", cxxopts::value(gSettings.optimizationStride))
 			("r,reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha))
 			("initial-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize))
 			("s,max-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize))
 			;
 		options.parse_positional("input");
-		options.show_positional_help();
+		options.positional_help("[input]").show_positional_help();
 
 		auto result = options.parse(argc, argv);
 		if (result.count("help")) {
@@ -74,7 +71,7 @@ int main(int argc, char **argv) {
 	// visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
 	viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "inputCloud");
-	highlightFeaturePoints(inputSensor.m_cloud, inputSensor.m_featurePoints, "inputCloudFeatures");
+	highlightFeaturePoints(inputSensor.m_featurePoints, "inputCloudFeatures");
 
 
 	std::cout << "Loading face model ..." << std::endl;
