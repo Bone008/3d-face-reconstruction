@@ -16,8 +16,7 @@ Matrix4f computeCoarseAlignmentProcrustes(const FaceModel& model, const Sensor& 
 
 Eigen::Matrix4f computeCoarseAlignmentICP(const FaceModel& model, const Sensor& inputSensor, const Eigen::Matrix4f& initialPose) {
 	std::cout << "  icp ... " << std::flush;
-	Matrix3Xf __realignedVertices = Map<const Matrix3Xf>(model.m_averageMesh.vertices.data(), 3, model.getNumVertices());
-	Matrix3Xf modelNormals = model.computeNormals(model.createDefaultParameters(), __realignedVertices);
+	Matrix3Xf modelNormals = model.computeNormals(model.m_averageMesh.vertices);
 	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr modelCloud = pointsToCloud(model.m_averageMesh.vertices, modelNormals);
 
 	pcl::IterativeClosestPointWithNormals<pcl::PointXYZRGBNormal, pcl::PointXYZRGBNormal> icp;

@@ -41,11 +41,14 @@ void Rasterizer::project(const FaceParameters& params, Matrix3Xf& outProjectedVe
 	VectorXf flatVertices = model.computeShape(params);
 	Matrix3Xf worldVertices = pose.topLeftCorner<3, 3>() * Map<Matrix3Xf>(flatVertices.data(), 3, model.getNumVertices());
 	worldVertices.colwise() += pose.topRightCorner<3, 1>();
-
 	// Project to screen space.
 	outProjectedVertices = intrinsics * worldVertices;
+
 	outVertexAlbedos = model.computeColors(params);
-	outWorldNormals = model.computeNormals(params, worldVertices);
+
+	Matrix3Xf normals = model.computeNormals(flatVertices);
+	// Only apply rotation of pose to normals.
+	outWorldNormals = pose.topLeftCorner<3, 3>() * normals;
 }
 
 void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals) {

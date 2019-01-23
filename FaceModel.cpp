@@ -108,7 +108,7 @@ Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
 	return result;
 }
 
-Eigen::Matrix3Xf FaceModel::computeNormals(const FaceParameters& params, const Eigen::Matrix3Xf& worldVertices) const
+Eigen::Matrix3Xf FaceModel::computeNormals(const Eigen::VectorXf& vertices) const
 {
 	int numVertices = getNumVertices();
 
@@ -119,9 +119,9 @@ Eigen::Matrix3Xf FaceModel::computeNormals(const FaceParameters& params, const E
 	for (int t=0;t<numTriangles;++t)
 	{
 		const auto& indices = m_averageMesh.triangles.col(t);
-		Eigen::Vector3f v0 = worldVertices.col(indices(0));
-		Eigen::Vector3f v1 = worldVertices.col(indices(1));
-		Eigen::Vector3f v2 = worldVertices.col(indices(2));
+		Eigen::Vector3f v0 = vertices.segment<3>(3 * indices(0));
+		Eigen::Vector3f v1 = vertices.segment<3>(3 * indices(1));
+		Eigen::Vector3f v2 = vertices.segment<3>(3 * indices(2));
 
 		Eigen::Vector3f n = (v1-v0).cross(v2-v0).normalized();
 
