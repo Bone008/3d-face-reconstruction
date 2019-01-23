@@ -346,6 +346,10 @@ data/rgbd_face_dataset/*
 !data/rgbd_face_dataset/.gitkeep
 data/MorphableModel/*
 !data/MorphableModel/.gitkeep
+data/team_members/*
+
+# do include feature point data files
+!data/**/*.points
 
 cmake_out/
 libs/
