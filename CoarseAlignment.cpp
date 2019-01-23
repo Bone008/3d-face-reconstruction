@@ -6,35 +6,37 @@
 #include "Sensor.h"
 #include "ProcrustesAligner.h"
 
-Eigen::Matrix4f computeCoarseAlignment(const FaceModel& model, const Sensor& inputSensor)
-{
-	// transform average mesh using procrustes
+using namespace Eigen;
+
+Matrix4f computeCoarseAlignmentProcrustes(const FaceModel& model, const Sensor& inputSensor) {
 	std::cout << "  procrustes ..." << std::endl;
 	ProcrustesAligner pa;
-	Eigen::Matrix4f pose = pa.estimatePose(model.m_averageFeaturePoints, inputSensor.m_featurePoints);
+	return pa.estimatePose(model.m_averageFeaturePoints, inputSensor.m_featurePoints);
+}
 
-	// transform average mesh using icp
+Eigen::Matrix4f computeCoarseAlignmentICP(const FaceModel& model, const Sensor& inputSensor, const Eigen::Matrix4f& initialPose) {
 	std::cout << "  icp ... " << std::flush;
-	pcl::PointCloud<pcl::PointXYZRGB>::Ptr procrustesModelCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(model.m_averageMesh.vertices), *procrustesModelCloud, pose);
+	Matrix3Xf __realignedVertices = Map<const Matrix3Xf>(model.m_averageMesh.vertices.data(), 3, model.getNumVertices());
+	Matrix3Xf modelNormals = model.computeNormals(model.createDefaultParameters(), __realignedVertices);
+	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr modelCloud = pointsToCloud(model.m_averageMesh.vertices, modelNormals);
 
-	pcl::IterativeClosestPoint<pcl::PointXYZRGB, pcl::PointXYZRGB> icp;
-	icp.setInputSource(procrustesModelCloud);
-	icp.setInputTarget(inputSensor.m_cloud);
+	pcl::IterativeClosestPointWithNormals<pcl::PointXYZRGBNormal, pcl::PointXYZRGBNormal> icp;
+	icp.setInputSource(modelCloud);
+	icp.setInputTarget(inputSensor.compute_normals());
+
 	// TODO set params dependent on input cloud features' scale (e.g. dependent on distance between eyes)
-	icp.setMaxCorrespondenceDistance (0.2); // TODO tweak
-	icp.setTransformationEpsilon (1e-2);// TODO tweak
+	icp.setMaxCorrespondenceDistance (0.02); // TODO tweak
+	icp.setTransformationEpsilon(1e-5);// TODO tweak
 	icp.setEuclideanFitnessEpsilon (1e-4); // TODO tweak
 
-    pcl::PointCloud<pcl::PointXYZRGB> icpAlignedCloud;
-    icp.align(icpAlignedCloud);
+    pcl::PointCloud<pcl::PointXYZRGBNormal> icpAlignedCloud;
+    icp.align(icpAlignedCloud, initialPose);
 
 	if (icp.hasConverged()) {
 		std::cout << "converged" << std::endl;
-		pose = icp.getFinalTransformation() * pose;
+		return icp.getFinalTransformation();
 	} else {
 		std::cout << "failed" << std::endl;
+		return Matrix4f::Identity();
 	}
-
-	return pose;
 }

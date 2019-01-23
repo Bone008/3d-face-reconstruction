@@ -17,7 +17,7 @@ public:
 		
 	}
 
-	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr compute_normals() {
+	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr compute_normals() const {
 		// load point cloud
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
 		cloud = m_cloud;

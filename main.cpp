@@ -79,7 +79,8 @@ int main(int argc, char **argv) {
 	FaceModel model(baseModelDir);
 
 	std::cout << "Coarse alignment ..." << std::endl;
-	Eigen::Matrix4f pose = computeCoarseAlignment(model, inputSensor);
+	Eigen::Matrix4f poseWithoutICP = computeCoarseAlignmentProcrustes(model, inputSensor);
+	Eigen::Matrix4f pose = computeCoarseAlignmentICP(model, inputSensor, poseWithoutICP);
 	
 	FaceParameters params;
 	if (gSettings.skipOptimization) {
@@ -104,19 +105,22 @@ int main(int argc, char **argv) {
 	std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
+	states.emplace_back("Default (before ICP)");
 
 	FaceParameters defaultParams = model.createDefaultParameters();
 
-	SwitchControl sc(viewer, states, "", "Tab", [&](int state, const std::vector<int>&props) {
+	SwitchControl sc(viewer, states, "a", "Tab", [&](int state, const std::vector<int>&props) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
 		FaceParameters newParams = (state == 0 ? params : defaultParams);
-		FaceParameters outparams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
+		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
 
-		Eigen::VectorXf finalShape = model.computeShape(outparams);
-		Eigen::Matrix4Xi finalColors = model.computeColors(outparams);
+		Eigen::Matrix4f newPose = (state != 2 ? pose : poseWithoutICP);
+
+		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
+		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
 		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
 	});
 
