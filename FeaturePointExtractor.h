@@ -5,6 +5,8 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include "Sensor.h"
 
+const int NUM_EXPECTED_FEATURE_POINTS = 6;
+
 /*
  * Cloud rendering adapted from:
  * http://robotics.dei.unipd.it/reid/index.php/8-dataset/9-overview-face
@@ -64,9 +66,9 @@ private:
         }
         fileIndices.close();
 
-        // check if 5 points exist
-        if (m_points.size() != 5) {
-            std::cerr << "Number of feature points must equal 5!" << std::endl;
+        // check if correct amount of points exist
+        if (m_points.size() != NUM_EXPECTED_FEATURE_POINTS) {
+            std::cerr << "Number of feature points must equal " << NUM_EXPECTED_FEATURE_POINTS << "!" << std::endl;
             //exit(-1);
         }
     }
