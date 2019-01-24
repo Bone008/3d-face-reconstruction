@@ -12,8 +12,6 @@ int Visualizer::c_vpBoth = 3;
 
 Visualizer::Visualizer() :
         m_viewer("Face Reconstruction"),
-        m_viewportSwitch(m_viewer, std::vector<std::string>{"Side by side", "Overlay"}, "", "v",
-                         [&](int state) { createViewports(); }),
         m_vpJohn(c_vpLeft),
         m_vpSteve(c_vpRight),
         m_changed(false) {
@@ -22,7 +20,11 @@ Visualizer::Visualizer() :
             -0.04, -0.005, 0.06, /* position */
             -0.1, -0.1, 1, /* view direction */
             0, -1, 0 /* view up */);
+
     createViewports();
+    m_viewportSwitch = new SwitchControl(std::vector<std::string>{"Side by side", "Overlay"}, "", "v",
+                     [&](int state) { std::cout << "callback2" << std::endl;m_changed = true; });
+    addSwitch(m_viewportSwitch);
 }
 
 void Visualizer::run() {
@@ -32,17 +34,14 @@ void Visualizer::run() {
 }
 
 void Visualizer::runOnce() {
-    boost::lock_guard<boost::mutex> lock{m_mutex};
-    if (m_changed) {
-        createViewports();
-        m_changed = false;
+    {
+        boost::lock_guard<boost::mutex> lock{m_mutex};
+        if (m_changed) {
+            createViewports();
+            m_changed = false;
+        }
     }
     m_viewer.spinOnce(500);
-}
-
-// TODO remove
-pcl::visualization::PCLVisualizer &Visualizer::getViewer() {
-    return m_viewer;
 }
 
 void Visualizer::setJohnPcl(pcl::PointCloud<pcl::PointXYZRGB>::Ptr johnPcl) {
@@ -79,9 +78,12 @@ void Visualizer::createViewports() {
     m_viewer.removeAllPointClouds(c_vpLeft);
     m_viewer.removeAllPointClouds(c_vpRight);
     m_viewer.removeAllPointClouds(c_vpBoth);
+    m_viewer.removeAllShapes(c_vpLeft);
+    m_viewer.removeAllShapes(c_vpRight);
+    m_viewer.removeAllShapes(c_vpBoth);
 
     // add new viewports
-    if (m_viewportSwitch.getState() == 0) { // side by side
+    if (m_viewportSwitch == nullptr || m_viewportSwitch->getState() == 0) { // side by side
         m_viewer.createViewPort(0, 0, 0.5, 1, c_vpLeft);
         m_viewer.createViewPort(0.5, 0, 1, 1, c_vpRight);
         m_vpJohn = c_vpLeft;
@@ -90,6 +92,11 @@ void Visualizer::createViewports() {
         m_viewer.createViewPort(0, 0, 1, 1, c_vpBoth);
         m_vpJohn = c_vpBoth;
         m_vpSteve = c_vpBoth;
+    }
+
+    // add switches
+    for (auto& sw : m_switches) {
+        sw->addToVisualizer(m_viewer, m_vpJohn);
     }
 
     // add john
@@ -108,4 +115,11 @@ void Visualizer::createViewports() {
     if (m_stevePcl != 0 && !m_steveVertices.empty()) {
         m_viewer.addPolygonMesh<pcl::PointXYZRGB>(m_stevePcl, m_steveVertices, "steve", m_vpSteve);
     }
+}
+
+void Visualizer::addSwitch(SwitchControl* newSwitch) {
+    boost::lock_guard<boost::mutex> lock{m_mutex};
+
+    m_switches.emplace_back(newSwitch);
+    m_changed = true;
 }

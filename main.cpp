@@ -18,7 +18,6 @@ const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
 const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
 
 // TODO add switch for feature points (on/off)
-// TODO add switches again after changing viewports
 // TODO visualize intermediate output during optimization
 // TODO add switch for different intermediate outputs
 // TODO show progress on screen
@@ -78,8 +77,7 @@ int main(int argc, char **argv) {
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
 
-	// TODO add to visualizer from optimizer thread
-	SwitchControl sc(visualizer.getViewer(), states, "", "Tab", [&](int state) {
+	SwitchControl* sc = new SwitchControl(states, "", "Tab", [&](int state) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
 
 		FaceParameters newParams = params;
@@ -91,7 +89,9 @@ int main(int argc, char **argv) {
 		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 		pcl::transformPointCloud(*pointsToCloud(finalShape, model->m_averageShapeMesh.vertexColors), *transformedCloud, pose);
 		visualizer.setStevePcl(transformedCloud);
+
 	});
+	visualizer.addSwitch(sc);
 
 	visualizer.run();
 	optimizingThread.join();

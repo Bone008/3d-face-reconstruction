@@ -10,13 +10,13 @@ public:
     void run();
     void runOnce();
 
-    pcl::visualization::PCLVisualizer &getViewer();
-
     void setJohnPcl(pcl::PointCloud<pcl::PointXYZRGB>::Ptr johnPcl);
     void setJohnFeatures(pcl::PointCloud<pcl::PointXYZRGB>::Ptr johnFeatures);
 
     void setStevePcl(pcl::PointCloud<pcl::PointXYZRGB>::Ptr stevePcl);
     void setSteveVertices(std::vector<pcl::Vertices> steveVertices);
+
+    void addSwitch(SwitchControl* newSwitch);
 
 private:
     static int c_vpLeft;
@@ -38,7 +38,8 @@ private:
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr m_stevePcl;
     std::vector<pcl::Vertices> m_steveVertices;
 
-    SwitchControl m_viewportSwitch;
+    std::vector<SwitchControl*> m_switches;
+    SwitchControl* m_viewportSwitch;
 
     void createViewports();
 
