@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include <pcl/filters/crop_box.h>
 #include "Optimizer.h"
+#include "OptimizerInit.h"
 #include "Rasterizer.h"
 #include "BMP.h"
 #include "utils.h"
@@ -234,6 +235,9 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	std::array<double, NUM_ALPHA_VEC> alpha{};
 	std::array<double, NUM_BETA_VEC> beta{};
+
+	VectorXf initialAlpha = initializeShapeParameters(model, pose, croppedCloud);
+	std::copy(initialAlpha.data(), initialAlpha.data() + NUM_ALPHA_VEC, alpha.begin());
 
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;

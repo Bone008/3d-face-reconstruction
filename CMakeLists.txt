@@ -49,6 +49,7 @@ set(HEADER_FILES
 		Mesh.h
 		FaceModel.h
 		Optimizer.h
+		OptimizerInit.h
         Rasterizer.h
 		Sensor.h
 		stdafx.h
@@ -59,6 +60,7 @@ set(SOURCE_FILES
 		CoarseAlignment.cpp
 		FaceModel.cpp
 		Optimizer.cpp
+		OptimizerInit.cpp
         Rasterizer.cpp
 		main.cpp
 		utils.cpp
