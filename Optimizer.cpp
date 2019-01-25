@@ -138,23 +138,26 @@ struct RegularizerFunctor
 	}
 };
 
-struct RasterizerFunctor : public ceres::IterationCallback {
-	RasterizerFunctor(Rasterizer& rasterizer, const double* alpha, const double* beta)
-		: alpha(alpha), beta(beta), rasterizer(rasterizer) {}
+struct CallbackFunctor : public ceres::IterationCallback {
+    CallbackFunctor(const FaceModel& model, const double* alpha, const double* beta,
+            std::function<void(const FaceParameters& params)> callback)
+            : model(model), alpha(alpha), beta(beta), callback(callback) {}
 
-	virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
-		FaceParameters params = rasterizer.model.createDefaultParameters();
-		params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
-		params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
+    virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
+        FaceParameters params = model.createDefaultParameters();
+        params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
+        params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
 
-		rasterizer.compute(params);
-		return ceres::CallbackReturnType::SOLVER_CONTINUE;
-	}
+        callback(params);
+        return ceres::CallbackReturnType::SOLVER_CONTINUE;
+    }
 
 private:
-	Rasterizer& rasterizer;
-	const double* alpha;
-	const double* beta;
+    const FaceModel& model;
+    const double* alpha;
+    const double* beta;
+
+    std::function<void(const FaceParameters& params)> callback;
 };
 
 pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
@@ -231,7 +234,8 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
 	return dst;
 }
 
-FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor) {
+FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor,
+        std::function<void(const FaceParameters& params)> intermediateResultCallback) {
 	auto croppedCloud = cropCloudToHeadRegion(inputSensor.m_cloud, pose, model);
 
 	const uint32_t width = croppedCloud->width;
@@ -275,11 +279,17 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
 	Rasterizer rasterizer({ width, height }, model, pose, inputSensor.m_cameraIntrinsics);
-	RasterizerFunctor rasterizerCallback(rasterizer, alpha.data(), beta.data());
+	CallbackFunctor rasterizerCallback(rasterizer.model, alpha.data(), beta.data(), [&](FaceParameters params) {
+        rasterizer.compute(params);
+    });
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
-	pcl::PointXYZRGBNormal centroid;
+    // Callback for intermediate results
+    CallbackFunctor callbackFunctor(rasterizer.model, alpha.data(), beta.data(), intermediateResultCallback);
+    callbackFunctor(ceres::IterationSummary());
+
+    pcl::PointXYZRGBNormal centroid;
 	pcl::computeCentroid(*croppedCloud, centroid);
 	Vector3f inputAverageCol = Vector3f(centroid.r, centroid.g, centroid.b);
 	Vector3f modelAverageCol = rasterizer.getAverageColor();
@@ -321,7 +331,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	options.minimizer_type = ceres::MinimizerType::TRUST_REGION;
 	options.initial_trust_region_radius = gSettings.initialStepSize;
 	options.max_trust_region_radius = gSettings.maxStepSize;
-	options.callbacks.push_back(&rasterizerCallback);
+    options.callbacks.push_back(&rasterizerCallback);
+    options.callbacks.push_back(&callbackFunctor);
 	ceres::Solver::Summary summary;
 	ceres::Solve(options, &problem, &summary);
 

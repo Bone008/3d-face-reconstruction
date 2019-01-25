@@ -18,9 +18,9 @@ const std::string baseModelDir = "../data/MorphableModel/";
 Settings gSettings;
 
 // TODO add switch for feature points (on/off)
-// TODO visualize intermediate output during optimization
 // TODO add switch for different intermediate outputs
 // TODO show progress on screen
+// TODO exit on escape key (also stop optimization)
 Visualizer visualizer;
 
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr getFeaturePointPcl(std::vector<Eigen::Vector3f> &featurePoints) {
@@ -91,23 +91,27 @@ int main(int argc, char **argv) {
         pose = computeCoarseAlignment(*model, inputSensor);
         visualizer.setCameraPose(&pose);
 
+        auto renderPcl = [&](FaceParameters params) {
+            Eigen::VectorXf finalShape = model->computeShape(params);
+            Eigen::Matrix4Xi finalColors = model->computeColors(params);
+
+            // visualize final reconstruction (Steve)
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+            pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
+            visualizer.setStevePcl(transformedCloud);
+        };
+
         if (gSettings.skipOptimization) {
             std::cout << "Skipping parameter optimization." << std::endl;
             params = model->createDefaultParameters();
         }
         else {
             std::cout << "Optimizing parameters ..." << std::endl;
-            params = optimizeParameters(*model, pose, inputSensor);
+            params = optimizeParameters(*model, pose, inputSensor, renderPcl);
         }
 
-        Eigen::VectorXf finalShape = model->computeShape(params);
-        Eigen::Matrix4Xi finalColors = model->computeColors(params);
         std::cout << "Done!" << std::endl;
-
-        // visualize final reconstruction (Steve)
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-        pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
-        visualizer.setStevePcl(transformedCloud);
+        renderPcl(params);
     });
 
     // add switch (optimized/default)
