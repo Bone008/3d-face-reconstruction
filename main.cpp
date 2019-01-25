@@ -102,20 +102,60 @@ int main(int argc, char **argv) {
 	pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
 	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
 
+	FaceParameters defaultParams = model.createDefaultParameters();
+
 	std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
-	states.emplace_back("Default (before ICP)");
+	FaceParameters newParams=params;
+	Eigen::Matrix4f newPose=pose;
 
-	FaceParameters defaultParams = model.createDefaultParameters();
-
-	SwitchControl sc(viewer, states, "a", "Tab", [&](int state, const std::vector<int>&props) {
+	SwitchControl scOptim(viewer, states, "", "Tab",0, [&](int state, const std::vector<int>&props) {
 		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
+		newParams = (state == 0 ? params : defaultParams);
+		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
+		newPose = pose;
+		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
+		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
+		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
+	});
+	std::vector<std::string> statesICP;
+	statesICP.emplace_back("with ICP");
+	statesICP.emplace_back("without ICP");
+	SwitchControl scICP(viewer, statesICP, "", "i",2, [&](int state, const std::vector<int>&props) {
+		std::cout << "Switching to " << (state == 0 ? "ICP" : "withoutICP") << " face." << std::endl;
+		newPose = (state == 0 ? pose: poseWithoutICP);
 
-		FaceParameters newParams = (state == 0 ? params : defaultParams);
+		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
+		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
+		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
+	});
+	std::vector<std::string> statesAlbedo; 
+	statesAlbedo.emplace_back("with albedo");
+	statesAlbedo.emplace_back("without albedo");
+
+	FaceParameters withoutAlbedo = newParams;
+	withoutAlbedo.beta.array() = { 0 };
+
+	SwitchControl scAlbedo(viewer, statesAlbedo, "", "space",4, [&](int state, const std::vector<int>&props) {
+		std::cout << "Switching to " << (state == 0 ? "with albedo" : "without albedo") << " face." << std::endl;
+		newParams = (state == 0 ? newParams : withoutAlbedo);
+		
 		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
 
-		Eigen::Matrix4f newPose = (state != 2 ? pose : poseWithoutICP);
+		Eigen::VectorXf finalShape = model.computeShape(newParams);
+		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
+		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
+		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
+	});
+	std::vector<std::string> statesAttribute;
+	SwitchControl scAttribute(viewer, statesAttribute, "Left", "Right", 0, [&](int state, const std::vector<int>&props) {
+		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
 
 		Eigen::VectorXf finalShape = model.computeShape(newParams);
 		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
