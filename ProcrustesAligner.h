@@ -6,7 +6,11 @@ public:
 
 private:
 	Eigen::Vector3f computeMean(const std::vector<Eigen::Vector3f>& points);
-	Eigen::Matrix3f estimateRotation(
+
+	float computeScale(std::vector<Eigen::Vector3f>& sourcePoints, const Eigen::Vector3f& sourceMean,
+										  const std::vector<Eigen::Vector3f>& targetPoints, const Eigen::Vector3f& targetMean);
+
+		Eigen::Matrix3f estimateRotation(
 		const std::vector<Eigen::Vector3f>& sourcePoints,
 		const Eigen::Vector3f& sourceMean,
 		const std::vector<Eigen::Vector3f>& targetPoints,

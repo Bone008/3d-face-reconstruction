@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Settings.h"
 #include "VirtualSensor.h"
 #include "FaceModel.h"
 #include "CoarseAlignment.h"
@@ -13,9 +14,8 @@
 #include "Visualizer.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
-const std::string inputFaceBaseDir = "../data/rgbd_face_dataset/";
-const std::string inputFacePcdFile = inputFaceBaseDir + "006_00_cloud.pcd";
-const std::string inputFeaturePointsFile = inputFaceBaseDir + "006_00_features.points";
+
+Settings gSettings;
 
 // TODO add switch for feature points (on/off)
 // TODO visualize intermediate output during optimization
@@ -40,61 +40,96 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr getFeaturePointPcl(std::vector<Eigen::Vec
     return points_to_highlight;
 }
 
-
 int main(int argc, char **argv) {
-	// load input point cloud (John)
-	std::cout << "Loading input data ..." << std::endl;
-	Sensor inputSensor = VirtualSensor(inputFacePcdFile, inputFeaturePointsFile);
-	visualizer.setJohnPcl(inputSensor.m_cloud);
-	visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
-	visualizer.runOnce();
+	try {
+		cxxopts::Options options(argv[0], "Program to reconstruct faces from RGB-D images.");
+		options.add_options()
+			("help", "Print help.")
+			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile))
+			("o,skip-optimization", "Enable fine optimization of face parameters.", cxxopts::value(gSettings.skipOptimization))
+			("opt-stride", "Pixel stride for fine optimization.", cxxopts::value(gSettings.optimizationStride))
+			("r,reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha))
+			("initial-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize))
+			("s,max-step-size", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize))
+			;
+		options.parse_positional("input");
+		options.positional_help("[input]").show_positional_help();
 
-	FaceModel* model;
+		auto result = options.parse(argc, argv);
+		if (result.count("help")) {
+			std::cout << options.help() << std::endl;
+			return 0;
+		}
+	}
+	catch (cxxopts::OptionException e) {
+		std::cerr << e.what() << std::endl;
+		return -2;
+	}
+
+	std::string inputFace = gSettings.inputFile;
+	std::string inputFeatures = inputFace.substr(0, inputFace.length() - 3) + "points";
+	std::cout << "Loading input data ..." << std::endl;
+    std::cout << "    Input file: " << inputFace << std::endl;
+    Sensor inputSensor = VirtualSensor(inputFace, inputFeatures);
+
+	// visualize input point cloud (John)
+	visualizer.setJohnPcl(inputSensor.m_cloud);
+    visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
+    visualizer.runOnce();
+
+    FaceModel* model;
     FaceParameters params;
-	Eigen::Matrix4f pose;
+    Eigen::Matrix4f pose;
+
     boost::thread optimizingThread([&]() {
-		// load face model (Steve)
-		std::cout << "Loading face model ..." << std::endl;
-		model = new FaceModel(baseModelDir);
-		visualizer.setSteveVertices(trianglesToVertexList(model->m_averageShapeMesh.triangles));
+        // load face model (Steve)
+        std::cout << "Loading face model ..." << std::endl;
+        model = new FaceModel(baseModelDir);
+        visualizer.setSteveVertices(trianglesToVertexList(model->m_averageMesh.triangles));
 
         std::cout << "Coarse alignment ..." << std::endl;
         pose = computeCoarseAlignment(*model, inputSensor);
+        visualizer.setCameraPose(&pose);
 
-        std::cout << "Optimizing parameters ..." << std::endl;
-        params = optimizeParameters(*model, pose, inputSensor);
-		Eigen::VectorXf finalShape = model->computeShape(params);
+        if (gSettings.skipOptimization) {
+            std::cout << "Skipping parameter optimization." << std::endl;
+            params = model->createDefaultParameters();
+        }
+        else {
+            std::cout << "Optimizing parameters ..." << std::endl;
+            params = optimizeParameters(*model, pose, inputSensor);
+        }
+
+        Eigen::VectorXf finalShape = model->computeShape(params);
+        Eigen::Matrix4Xi finalColors = model->computeColors(params);
         std::cout << "Done!" << std::endl;
 
         // visualize final reconstruction (Steve)
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-        pcl::transformPointCloud(*pointsToCloud(finalShape, model->m_averageShapeMesh.vertexColors), *transformedCloud, pose);
+        pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
         visualizer.setStevePcl(transformedCloud);
     });
 
-	// add switch (optimized/default)
-	std::vector<std::string> states;
+    // add switch (optimized/default)
+    std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
 
-	SwitchControl* sc = new SwitchControl(states, "", "Tab", [&](int state) {
-		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
+    SwitchControl* sc = new SwitchControl(states, "", "Tab", [&](int state, const std::vector<int>&props) {
+        FaceParameters defaultParams = model->createDefaultParameters();
+        FaceParameters newParams = (state == 0 ? params : defaultParams);
+        FaceParameters outparams = model->computeShapeAttribute(newParams, props[0], props[1], props[2]);
 
-		FaceParameters newParams = params;
-		if (state == 1 /* Default */) {
-			newParams.alpha.setZero();
-		}
-
-		Eigen::VectorXf finalShape = model->computeShape(newParams);
-		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, model->m_averageShapeMesh.vertexColors), *transformedCloud, pose);
-		visualizer.setStevePcl(transformedCloud);
-
-	});
+        Eigen::VectorXf finalShape = model->computeShape(outparams);
+        Eigen::Matrix4Xi finalColors = model->computeColors(outparams);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
+        visualizer.setStevePcl(transformedCloud);
+    });
 	visualizer.addSwitch(sc);
 
-	visualizer.run();
-	optimizingThread.join();
+    visualizer.run();
+    optimizingThread.join();
 
 	return 0;
 }

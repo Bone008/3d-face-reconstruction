@@ -1,82 +1,122 @@
 #include "stdafx.h"
 #include <pcl/filters/crop_box.h>
 #include "Optimizer.h"
+#include "Rasterizer.h"
 #include "BMP.h"
 #include "utils.h"
+#include "Settings.h"
 
 using namespace Eigen;
 
 // Constant to allow better compile-time optimization.
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
-const unsigned int NUM_EIGEN_VEC = 160;
+const unsigned int NUM_ALPHA_VEC = 160;
+const unsigned int NUM_BETA_VEC = 20;
+
+const unsigned int NUM_DENSE_RESIDUALS = 4 + 3;
 
 struct ResidualFunctor {
 	// x is the source (pos mesh), y is the target (input cloud)
-	ResidualFunctor(const pcl::PointXYZRGB& inputPoint, const PixelData& rasterizerResult, const VectorXf& averageFaceVertices, const MatrixXf& shapeBasis, const Matrix4f& pose)
-		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), averageFaceVertices(averageFaceVertices), shapeBasis(shapeBasis), pose(pose) {}
+	ResidualFunctor(const pcl::PointXYZRGBNormal& inputPoint, const PixelData& rasterizerResult, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics, const Vector3f& colorDelta)
+		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose), intrinsics(intrinsics), colorDelta(colorDelta) {}
 
 	template <typename T>
-	bool operator()(T const* alpha, T* residual) const {
+	bool operator()(T const* alpha, T const* beta, T* residual) const {
+		typedef Matrix<T, 2, 1> Vector2T;
+		typedef Matrix<T, 3, 1> Vector3T;
+		typedef Matrix<T, 2, 2> Matrix2T;
+		typedef Matrix<T, 3, 3> Matrix3T;
+
 		if (!rasterizerResult.isValid) {
 			// Skip pixels where Steve isn't rendered into.
-			residual[0] = T(0);
-			residual[1] = T(0);
-			residual[2] = T(0);
+			std::fill(residual, residual + NUM_DENSE_RESIDUALS, T(0));
 			return true;
 		}
 
-		T worldSpacePixel[] = { T(0), T(0), T(0) };
+		Vector3T vertexWorldPositions[3];
+		Vector3T vertexAlbedos[3];
+		Vector2T vertexScreenPositions[3];
 
 		// For each vertex that is part of the triangle at this pixel.
 		for (int i = 0; i < 3; i++) {
 			int vertexIndex = rasterizerResult.vertexIndices[i];
-			float barycentricFactor = rasterizerResult.barycentricCoordinates[i];
+
+			// Albedo of average face (ignore alpha).
+			vertexAlbedos[i] = model.m_averageMesh.vertexColors.col(vertexIndex).head<3>().cast<T>();
+			// Apply beta to albedo.
+			for (int j = 0; j < NUM_BETA_VEC; j++) {
+				T std = T(model.m_albedoStd(j));
+				vertexAlbedos[i] += model.m_albedoBasis.block(3 * vertexIndex, j, 3, 1).cast<T>() * std * beta[j];
+			}
 
 			// Vertex position of average face.
-			T pos[] = {
-				T(averageFaceVertices(3 * vertexIndex + 0)),
-				T(averageFaceVertices(3 * vertexIndex + 1)),
-				T(averageFaceVertices(3 * vertexIndex + 2)),
-			};
-
+			Vector3T pos = model.m_averageMesh.vertices.segment(3 * vertexIndex, 3).cast<T>();
 			// Displace by applying alpha.
-			for (int j = 0; j < NUM_EIGEN_VEC; j++) {
-				pos[0] += T(shapeBasis(3 * vertexIndex + 0, j)) * alpha[j];
-				pos[1] += T(shapeBasis(3 * vertexIndex + 1, j)) * alpha[j];
-				pos[2] += T(shapeBasis(3 * vertexIndex + 2, j)) * alpha[j];
+			for (int j = 0; j < NUM_ALPHA_VEC; j++) {
+				T std = T(model.m_shapeStd(j));
+				pos += model.m_shapeBasis.block(3 * vertexIndex, j, 3, 1).cast<T>() * std * alpha[j];
 			}
 
 			// Transform to world space.
-			T worldPos[] = {
-				T(pose(0,0)) * pos[0] + T(pose(0,1)) * pos[1] + T(pose(0,2)) * pos[2] + T(pose(0,3)),
-				T(pose(1,0)) * pos[0] + T(pose(1,1)) * pos[1] + T(pose(1,2)) * pos[2] + T(pose(1,3)),
-				T(pose(2,0)) * pos[0] + T(pose(2,1)) * pos[1] + T(pose(2,2)) * pos[2] + T(pose(2,3)),
-			};
-
-			worldSpacePixel[0] += T(barycentricFactor) * worldPos[0];
-			worldSpacePixel[1] += T(barycentricFactor) * worldPos[1];
-			worldSpacePixel[2] += T(barycentricFactor) * worldPos[2];
+			vertexWorldPositions[i] = pose.topLeftCorner<3, 3>().cast<T>() * pos + pose.topRightCorner<3, 1>().cast<T>();
+			// Transform to screen space.
+			Vector3T projectedPos = intrinsics.cast<T>() * vertexWorldPositions[i];
+			vertexScreenPositions[i] = ((projectedPos.template head<2>() / projectedPos.z()).array()).matrix();
 		}
 
-		residual[0] = T(inputPoint.x) - worldSpacePixel[0];
-		residual[1] = T(inputPoint.y) - worldSpacePixel[1];
-		residual[2] = T(inputPoint.z) - worldSpacePixel[2];
+		// Compute barycentric coordinates from screen positions;
+		Matrix2T mT;
+		mT << (vertexScreenPositions[0] - vertexScreenPositions[2]),
+			(vertexScreenPositions[1] - vertexScreenPositions[2]);
+		Matrix2T mTi = mT.inverse();
+
+		Vector2T b = mTi * (rasterizerResult.pixelCenter.cast<T>() - vertexScreenPositions[2]);
+		T barycentricCoordinates[] = {
+			b(0),
+			b(1),
+			T(1.0f) - b(0) - b(1)
+		};
+
+		// Interpolate final values for this pixel.
+		Vector3T worldPos = Vector3T::Zero();
+		Vector3T albedo = Vector3T::Zero();
+		for (int i = 0; i < 3; i++) {
+			worldPos += barycentricCoordinates[i] * vertexWorldPositions[i];
+			albedo += barycentricCoordinates[i] * vertexAlbedos[i];
+		}
+
+		Vector3T inputPos = Vector3T(T(inputPoint.x), T(inputPoint.y), T(inputPoint.z));
+		Vector3T pointToPointDist = inputPos - worldPos;
+		residual[0] = pointToPointDist(0);
+		residual[1] = pointToPointDist(1);
+		residual[2] = pointToPointDist(2);
 
 		// TODO: point to plane distance, but for this we need normals
-		// TODO: compare colors once we process albedo
+		residual[6] = pointToPointDist(0)*T(inputPoint.normal_x) + pointToPointDist(1)*T(inputPoint.normal_y) + pointToPointDist(2)*T(inputPoint.normal_z);
+
+		Vector3T inputCol = Vector3T(T(inputPoint.r), T(inputPoint.g), T(inputPoint.b));
+		T colorScaling = T(1.f / 255.f);
+		Vector3T colorDist = (inputCol - albedo + colorDelta.cast<T>()) / T(255.0f);
+		residual[3] = colorDist(0);
+		residual[4] = colorDist(1);
+		residual[5] = colorDist(2);
+
+		// Color residuals are disabled for now unti they work properly ...
+		residual[3] = T(0);
+		residual[4] = T(0);
+		residual[5] = T(0);
 		return true;
 	}
 
 private:
 	// Input pixel that this residual is computing.
-	const pcl::PointXYZRGB& inputPoint;
+	const pcl::PointXYZRGBNormal& inputPoint;
 
-	// Shape (3 * numVertices,)
-	const VectorXf& averageFaceVertices;
-	// Shape (3 * numVertices, numEigenVec)
-	const MatrixXf& shapeBasis;
+	const FaceModel& model;
 	const Matrix4f& pose;
+	const Matrix3f& intrinsics;
+	const Vector3f& colorDelta;
 
 	// Rasterization result for this pixel.
 	const PixelData& rasterizerResult;
@@ -84,199 +124,47 @@ private:
 
 struct RegularizerFunctor
 {
-	// TODO pass in from the outside
-	const float regStrength = 25.f;
-
 	template <typename T>
-	bool operator()(T const* alpha, T* residual) const {
-		T factor = T(regStrength / NUM_EIGEN_VEC);
-		for (size_t i = 0; i < NUM_EIGEN_VEC; i++) {
+	bool operator()(T const* alpha, T const* beta, T* residual) const {
+		T factor = T(gSettings.regStrengthAlpha / NUM_ALPHA_VEC);
+		for (size_t i = 0; i < NUM_ALPHA_VEC; i++) {
 			residual[i] = factor * alpha[i];
+		}
+		factor = T(gSettings.regStrengthBeta / NUM_BETA_VEC);
+		for (size_t i = 0; i < NUM_BETA_VEC; i++) {
+			residual[NUM_ALPHA_VEC + i] = factor * beta[i];
 		}
 		return true;
 	}
 };
 
-struct BarycentricTransform {
-private:
-	Vector2f offset;
-	Matrix2f Ti;
-public:
-	BarycentricTransform(const Vector2f& s0, const Vector2f& s1, const Vector2f& s2) :
-		offset(s2) {
-		Matrix2f T;
-		T << (s0 - s2), (s1 - s2);
-		Ti = T.inverse();
-	}
-	Vector3f operator()(const Vector2f& v) const {
-		Vector2f b;
-		b = Ti * (v - offset);
-		return Vector3f(b[0], b[1], 1.0f - b[0] - b[1]);
-	}
-};
-
 struct RasterizerFunctor : public ceres::IterationCallback {
-	RasterizerFunctor(std::vector<PixelData>& rasterizerResults, const Array2i frameSize, const double* alpha, const FaceModel& model, const Matrix4f& pose, const Matrix3f& intrinsics)
-		: rasterizerResults(rasterizerResults), frameSize(frameSize), alpha(alpha), model(model), pose(pose), intrinsics(intrinsics) {}
+	RasterizerFunctor(Rasterizer& rasterizer, const double* alpha, const double* beta)
+		: alpha(alpha), beta(beta), rasterizer(rasterizer) {}
 
 	virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
-		const Matrix3Xf& projectedVertices = project();
-		rasterize(projectedVertices);
-		numCalls++;
+		FaceParameters params = rasterizer.model.createDefaultParameters();
+		params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
+		params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
+
+		rasterizer.compute(params);
 		return ceres::CallbackReturnType::SOLVER_CONTINUE;
 	}
 
 private:
-	// How many times this rasterizer has been invoked so far.
-	int numCalls = 0;
-
+	Rasterizer& rasterizer;
 	const double* alpha;
-	const FaceModel& model;
-	const Matrix4f& pose;
-	const Matrix3f& intrinsics;
-
-	// Output of the rasterization for all pixels (barycentric coordinates and vertex indices).
-	// Stores info about pixels in row-major order, so pixel (x,y) is at index (y*width + x).
-	std::vector<PixelData>& rasterizerResults;
-	const Array2i frameSize;
-
-	Matrix3Xf project() {
-		std::cout << "          Alpha: " << alpha[0] << "," << alpha[1] << "," << alpha[2] << "," << alpha[3] << ", etc." << std::endl;
-		std::cout << "          Rasterization: project ..." << std::flush;
-
-		FaceParameters params;
-		params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
-		params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha, NUM_EIGEN_VEC).cast<float>();
-
-		VectorXf flatVertices = model.computeShape(params);
-		Matrix3Xf worldVertices = pose.topLeftCorner<3, 3>() * Map<Matrix3Xf>(flatVertices.data(), 3, model.getNumVertices());
-		worldVertices.colwise() += pose.topRightCorner<3, 1>();
-
-		// Project to screen space.
-		return intrinsics * worldVertices;
-	}
-
-	void rasterize(const Matrix3Xf& projectedVertices) {
-		// Reset output.
-		std::fill(rasterizerResults.begin(), rasterizerResults.end(), PixelData());
-
-		std::cout << " rasterize ..." << std::flush;
-
-		ArrayXXf depthBuffer(frameSize.x(), frameSize.y());
-		depthBuffer.setConstant(std::numeric_limits<float>::infinity());
-
-		const Matrix3Xi& triangles = model.m_averageShapeMesh.triangles;
-
-		for (size_t t = 0; t < triangles.cols(); t++) {
-			const auto& indices = triangles.col(t);
-			Vector3f v0 = projectedVertices.col(indices(0));
-			Vector3f v1 = projectedVertices.col(indices(1));
-			Vector3f v2 = projectedVertices.col(indices(2));
-
-			// Get vertices in pixel space.
-			auto s0 = ((v0.head<2>() / v0.z()).array()).matrix();
-			auto s1 = ((v1.head<2>() / v1.z()).array()).matrix();
-			auto s2 = ((v2.head<2>() / v2.z()).array()).matrix();
-
-			// Calculate bounds of triangle on screen.
-			Array2i boundsMinPx = s0.array().min(s1.array()).min(s2.array()).cast<int>();
-			Array2i boundsMaxPx = s0.array().max(s1.array()).max(s2.array()).cast<int>();
-			//Array2i boundsMinPx = ((0.5f*boundsMin + 0.5f) * frameSize.cast<float>()).cast<int>();
-			//Array2i boundsMaxPx = ((0.5f*boundsMax + 0.5f) * frameSize.cast<float>()).cast<int>();
-			boundsMaxPx += 1;
-
-			// Clip to actual frame buffer region.
-			boundsMinPx = boundsMinPx.max(Array2i(0, 0));
-			boundsMaxPx = boundsMaxPx.min(frameSize);
-
-			BarycentricTransform bary(s0, s1, s2);
-
-			for (int y = boundsMinPx.y(); y < boundsMaxPx.y(); y++) {
-				for (int x = boundsMinPx.x(); x < boundsMaxPx.x(); x++) {
-					/*Array2f pos(x, y);
-					pos /= frameSize.cast<float>();
-					pos = (pos - 0.5f) * 2.0f;
-
-					Vector3f baryCoords = bary(pos.matrix());*/
-					Vector3f baryCoords = bary(Vector2f(x + 0.5f, y + 0.5f));
-
-					if ((baryCoords.array() <= 1.0f).all() && (baryCoords.array() >= 0.0f).all()) {
-						float depth = baryCoords.dot(Vector3f(v0.z(), v1.z(), v2.z()));
-						if (depth < depthBuffer(x, y)) {
-							depthBuffer(x, y) = depth;
-							PixelData& out = rasterizerResults[y * frameSize.x() + x];
-							out.isValid = true;
-							out.vertexIndices[0] = indices(0);
-							out.vertexIndices[1] = indices(1);
-							out.vertexIndices[2] = indices(2);
-							out.barycentricCoordinates = baryCoords;
-						}
-					}
-				}
-			}
-		}
-
-		size_t filledPx = std::count_if(rasterizerResults.begin(), rasterizerResults.end(), [](const PixelData& px) { return px.isValid; });
-		std::cout << " (valid pixels: " << filledPx << ")";
-
-		{
-			std::cout << " saving bmp ..." << std::flush;
-			BMP bmp(frameSize.x(), frameSize.y());
-			BMP bmpCol(frameSize.x(), frameSize.y());
-			// replace infinity values in buffer with 0
-			for (size_t i = 0; i < depthBuffer.size(); i++) {
-				if (std::isinf(depthBuffer.data()[i]))
-					depthBuffer.data()[i] = 0;
-			}
-			const float scale = depthBuffer.maxCoeff();
-			for (int i = 0; i < depthBuffer.size(); i++) {
-				Array4i depthCol;
-				if (depthBuffer.data()[i] == 0) {
-					depthCol = Array4i(0, 0, 30, 255);
-				}
-				else {
-					int c = int(depthBuffer.data()[i] / scale * 255);
-					depthCol = Array4i(c, c, c, 255);
-				}
-				bmp.data[4 * i + 2] = depthCol[0];
-				bmp.data[4 * i + 1] = depthCol[1];
-				bmp.data[4 * i + 0] = depthCol[2];
-				bmp.data[4 * i + 3] = depthCol[3];
-
-				auto& result = rasterizerResults[i];
-				Array4f col;
-				col << 0, 0, 0, 0;
-				for (int v = 0; v < 3; v++) {
-					float bary = result.barycentricCoordinates(v);
-					auto& vcol = model.m_averageShapeMesh.vertexColors.col(result.vertexIndices[v]);
-					col += bary * vcol.array().cast<float>();
-				}
-
-				bmpCol.data[4 * i + 2] = col[0];
-				bmpCol.data[4 * i + 1] = col[1];
-				bmpCol.data[4 * i + 0] = col[2];
-				bmpCol.data[4 * i + 3] = col[3];
-			}
-
-			char filename[100];
-			sprintf(filename, "depthmap_%d.bmp", numCalls);
-			bmp.write(filename);
-			sprintf(filename, "ecolmap_%d.bmp", numCalls);
-			bmpCol.write(filename);
-		}
-
-		std::cout << " done!" << std::endl;
-	}
+	const double* beta;
 };
 
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
+pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
 	pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr inputCloud,
 	const Matrix4f& pose,
 	const FaceModel& model)
 {
 	// find average Steve's size
 	pcl::PointCloud<pcl::PointXYZRGB> transformedSteve;
-	pcl::transformPointCloud(*pointsToCloud(model.m_averageShapeMesh.vertices), transformedSteve, pose);
+	pcl::transformPointCloud(*pointsToCloud(model.m_averageMesh.vertices), transformedSteve, pose);
 	Vector4f min;
 	Vector4f max;
 	pcl::getMinMax3D(transformedSteve, min, max);
@@ -297,7 +185,50 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropCloudToHeadRegion(
 
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr out(new pcl::PointCloud<pcl::PointXYZRGB>);
 	boxFilter.filter(*out);
-	return out;
+	// load point cloud
+	pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+	cloud = out;
+	// estimate normals
+	pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+
+	pcl::IntegralImageNormalEstimation<pcl::PointXYZRGB, pcl::Normal> ne;
+	ne.setInputCloud(cloud);
+	ne.setNormalEstimationMethod(pcl::IntegralImageNormalEstimation<pcl::PointXYZRGB, pcl::Normal>::COVARIANCE_MATRIX);
+	ne.setNormalSmoothingSize(10.0f);
+	ne.setDepthDependentSmoothing(true);
+	ne.compute(*normals);
+	
+	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr dst(new pcl::PointCloud<pcl::PointXYZRGBNormal>); // To be created
+	std::cout << "1" << endl;
+	// Initialization part
+	dst->width = out->width;
+	std::cout << "2" << endl;
+	dst->height = out->height;
+	std::cout << "3" << endl;
+	dst->is_dense = true;
+	std::cout << "4" << endl;
+	dst->points.resize(dst->width * dst->height);
+	std::cout << "intialisation pointNormal" << endl;
+	// Assignment part
+	for (int i = 0; i < normals->points.size(); i++)
+	{
+		dst->points.at(i).x = out->points.at(i).x;
+		dst->points.at(i).y = out->points.at(i).y;
+		dst->points.at(i).z = out->points.at(i).z;
+
+		dst->points.at(i).r = out->points.at(i).r;
+		dst->points.at(i).g = out->points.at(i).g;
+		dst->points.at(i).b = out->points.at(i).b;
+
+		// cloud_normals -> Which you have already have; generated using pcl example code 
+
+		dst->points.at(i).curvature = normals->points[i].curvature;
+
+		dst->points.at(i).normal_x = normals->points[i].normal_x;
+		dst->points.at(i).normal_y = normals->points[i].normal_y;
+		dst->points.at(i).normal_z = normals->points[i].normal_z;
+	}
+	return dst;
 }
 
 FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor) {
@@ -306,11 +237,12 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	const uint32_t width = croppedCloud->width;
 	const uint32_t height = croppedCloud->height;
 
-	std::array<double, NUM_EIGEN_VEC> alpha{};
-	std::vector<PixelData> rasterResults(width * height);
+	std::array<double, NUM_ALPHA_VEC> alpha{};
+	std::array<double, NUM_BETA_VEC> beta{};
 
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;
+		int warnCount = 0;
 		BMP bmp(width, height);
 		for (unsigned int y = 0; y < height; y++) {
 			for (unsigned int x = 0; x < width; x++) {
@@ -322,8 +254,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 				int sx = int(s.x() + 0.5f);
 				int sy = int(s.y() + 0.5f);
 
-				if (sx != x || sy != y) {
-					std::cout << "(" << x << "," << y << ") goes to (" << sx << "," << sy << ")" << std::endl;
+				if ((sx != x || sy != y) && warnCount++ < 10) {
+					std::cout << "    (" << x << "," << y << ") goes to (" << sx << "," << sy << ")" << std::endl;
 				}
 
 				if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
@@ -342,27 +274,43 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
-	RasterizerFunctor rasterizerCallback(rasterResults, { width, height }, alpha.data(), model, pose, inputSensor.m_cameraIntrinsics);
+	Rasterizer rasterizer({ width, height }, model, pose, inputSensor.m_cameraIntrinsics);
+	RasterizerFunctor rasterizerCallback(rasterizer, alpha.data(), beta.data());
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
+	pcl::PointXYZRGBNormal centroid;
+	pcl::computeCentroid(*croppedCloud, centroid);
+	Vector3f inputAverageCol = Vector3f(centroid.r, centroid.g, centroid.b);
+	Vector3f modelAverageCol = rasterizer.getAverageColor();
+	// Contains the RGB difference due to lighting from the input face to the synthetic face.
+	Vector3f colorDelta = modelAverageCol - inputAverageCol;
+
+	std::cout << "| input average: " << inputAverageCol.transpose() << std::endl;
+	std::cout << "| model average: " << modelAverageCol.transpose() << std::endl;
+	std::cout << "|        delta: " << colorDelta.transpose() << std::endl;
+
+
 	ceres::Problem problem;
-	for (unsigned int y = 0; y < height; y += 2) {
-		for (unsigned int x = 0; x < width; x += 2) {
-			const pcl::PointXYZRGB& point = (*croppedCloud)(x, y);
+	unsigned int stride = gSettings.optimizationStride;
+	for (unsigned int y = 0; y < height; y += stride) {
+		for (unsigned int x = 0; x < width; x += stride) {
+			const pcl::PointXYZRGBNormal& point = (*croppedCloud)(x, y);
 			if (std::isnan(point.z)) {
 				continue;
 			}
-
-			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, 3, NUM_EIGEN_VEC>(
-				new ResidualFunctor(point, rasterResults[y * width + x], model.m_averageShapeMesh.vertices, model.m_shapeBasis, pose));
-			problem.AddResidualBlock(costFunc, NULL, alpha.data());
+			if (std::isnan(point.normal_x)) {
+				continue;
+			}
+			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC>(
+				new ResidualFunctor(point, rasterizer.pixelResults[y * width + x], model, pose, inputSensor.m_cameraIntrinsics, colorDelta));
+			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data());
 		}
 	}
 
 	// Add regularization error term.
-	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_EIGEN_VEC, NUM_EIGEN_VEC>(new RegularizerFunctor());
-	problem.AddResidualBlock(regFunc, NULL, alpha.data());
+	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_ALPHA_VEC + NUM_BETA_VEC, NUM_ALPHA_VEC, NUM_BETA_VEC>(new RegularizerFunctor());
+	problem.AddResidualBlock(regFunc, NULL, alpha.data(), beta.data());
 
 	std::cout << "Cost function has " << problem.NumResidualBlocks() << " residual blocks." << std::endl;
 
@@ -371,18 +319,20 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	options.update_state_every_iteration = true;
 	options.linear_solver_type = ceres::LinearSolverType::DENSE_QR;
 	options.minimizer_type = ceres::MinimizerType::TRUST_REGION;
-	options.initial_trust_region_radius = 5e-3;
-	options.max_trust_region_radius = 0.15;
+	options.initial_trust_region_radius = gSettings.initialStepSize;
+	options.max_trust_region_radius = gSettings.maxStepSize;
 	options.callbacks.push_back(&rasterizerCallback);
 	ceres::Solver::Summary summary;
 	ceres::Solve(options, &problem, &summary);
 
 	std::cout << summary.FullReport() << std::endl;
-	std::cout << "Some final values of alpha: " << Map<VectorXd>(alpha.data(), 10) << std::endl;
 
-	FaceParameters params;
-	params.alpha = VectorXf(model.m_shapeBasis.cols()).setZero();
-	params.alpha.head<NUM_EIGEN_VEC>() = Map<const VectorXd>(alpha.data(), NUM_EIGEN_VEC).cast<float>();
+	FaceParameters params = model.createDefaultParameters();
+	params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha.data(), NUM_ALPHA_VEC).cast<float>();
+	params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta.data(), NUM_BETA_VEC).cast<float>();
+
+	std::cout << "Some final values of alpha: " << params.alpha.head<10>().transpose() << std::endl;
+	std::cout << "Some final values of beta: " << params.beta.head<10>().transpose() << std::endl;
 
 	return params;
 }

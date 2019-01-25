@@ -5,56 +5,115 @@
 const std::string filenameAverageMesh = "averageMesh.off";
 const std::string filenameAverageMeshFeaturePoints = "averageMesh_features.points";
 const std::string filenameBasisShape = "ShapeBasis.matrix";
+const std::string filenameBasisAlbedo = "AlbedoBasis.matrix";
 const std::string filenameBasisExpression = "ExpressionBasis.matrix";
 const std::string filenameStdDevShape = "StandardDeviationShape.vec";
+const std::string filenameStdDevAlbedo = "StandardDeviationAlbedo.vec";
 const std::string filenameStdDevExpression = "StandardDeviationExpression.vec";
+
+Eigen::MatrixXf discardEvery4thRow(const Eigen::Ref<const Eigen::MatrixXf>& matrix) {
+	assert(matrix.rows() % 4 == 0 && "matrix rows need to be a multiple of 4");
+	Eigen::Index numBlocks = matrix.rows() / 4;
+	Eigen::MatrixXf result(3 * numBlocks, matrix.cols());
+	for (int i = 0; i < numBlocks; i++) {
+		result.middleRows(3 * i, 3) = matrix.middleRows(4 * i, 3);
+	}
+	return result;
+}
 
 FaceModel::FaceModel(const std::string& baseDir) {
 	// load average shape
-	m_averageShapeMesh = loadOFF(baseDir + filenameAverageMesh);
-	m_averageShapeMesh.vertices /= 1000000.0f;
+	m_averageMesh = loadOFF(baseDir + filenameAverageMesh);
+	m_averageMesh.vertices /= 1000000.0f;
 	// load average shape feature points
 	FeaturePointExtractor averageFeatureExtractor(baseDir + filenameAverageMeshFeaturePoints, nullptr);
 	m_averageFeaturePoints = averageFeatureExtractor.m_points;
 
-	unsigned int nVertices = getNumVertices();
+	unsigned int nVertices = m_averageMesh.getNumVertices();
 
 	// load shape basis
 	std::vector<float> shapeBasisRaw = loadBinaryVector(baseDir + filenameBasisShape);
 	unsigned int nEigenVec = shapeBasisRaw.size() / (4 * nVertices);
-	// convert to matrix
-	Eigen::Map<Eigen::MatrixXf> shapeBasisVec4(shapeBasisRaw.data(), 4 * nVertices, nEigenVec);
+	Eigen::Map<Eigen::MatrixXf> shapeBasis4(shapeBasisRaw.data(), 4 * nVertices, nEigenVec);
+	m_shapeBasis = discardEvery4thRow(shapeBasis4);
 
-	// discard 4th vertex coordinate
-	m_shapeBasis.resize(3 * nVertices, nEigenVec);
-	for (int i = 0; i < nVertices; i++) {
-		m_shapeBasis.block(3 * i, 0, 3, nEigenVec) = shapeBasisVec4.block(4 * i, 0, 3, nEigenVec);
+	// load albedo basis
+	std::vector<float> albedoBasisRaw = loadBinaryVector(baseDir + filenameBasisAlbedo);
+	if (albedoBasisRaw.size() != shapeBasisRaw.size()) {
+		std::cout << "ERROR: Expected albedo basis to be the same size as shape basis." << std::endl;
+		exit(1);
 	}
+	Eigen::Map<Eigen::MatrixXf> albedoBasis4(albedoBasisRaw.data(), 4 * nVertices, nEigenVec);
+	m_albedoBasis = discardEvery4thRow(albedoBasis4);
 
+	// load expression basis
 	std::vector<float> expressionBasisRaw = loadBinaryVector(baseDir + filenameBasisExpression);
 	unsigned int nExpr = expressionBasisRaw.size() / (4 * nVertices);
-	// convert to matrix
-	Eigen::Map<Eigen::MatrixXf> expressionBasisVec4(expressionBasisRaw.data(), 4 * nVertices, nExpr);
+	Eigen::Map<Eigen::MatrixXf> expressionBasis4(expressionBasisRaw.data(), 4 * nVertices, nExpr);
+	m_expressionBasis = discardEvery4thRow(expressionBasis4);
 
-	// discard 4th vertex coordinate
-	m_expressionBasis.resize(3 * nVertices, nExpr);
-	for (int i = 0; i < nVertices; i++) {
-		m_expressionBasis.block(3 * i, 0, 3, nExpr) = expressionBasisVec4.block(4 * i, 0, 3, nExpr);
-	}
-
-	// not needed yet
-	/*
-	auto shapeDevRaw = new float[nEigenVec];
-	LoadVector(filenameStdDevShape, shapeDevRaw, nEigenVec);
-
-	auto expressionDevRaw = new float[nExpr];
-	LoadVector(filenameStdDevExpression, expressionDevRaw, nExpr);
-	*/
+	// load standard deviations
+	std::vector<float> shapeStdRaw = loadBinaryVector(baseDir + filenameStdDevShape);
+	m_shapeStd = Eigen::Map<Eigen::RowVectorXf>(shapeStdRaw.data(), shapeStdRaw.size());
+	std::vector<float> albedoStdRaw = loadBinaryVector(baseDir + filenameStdDevAlbedo);
+	m_albedoStd = Eigen::Map<Eigen::RowVectorXf>(albedoStdRaw.data(), albedoStdRaw.size());
+	std::vector<float> expressionStdRaw = loadBinaryVector(baseDir + filenameStdDevExpression);
+	m_expressionStd = Eigen::Map<Eigen::RowVectorXf>(expressionStdRaw.data(), expressionStdRaw.size());
 }
 
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
 {
-	return m_averageShapeMesh.vertices + m_shapeBasis * params.alpha;
+	assert(params.alpha.rows() == m_shapeBasis.cols() && "face parameter alpha has incorrect size");
+	auto& scaledAlpha = (params.alpha.array() * m_shapeStd.array()).matrix();
+	return m_averageMesh.vertices + m_shapeBasis * scaledAlpha;
+}
+
+Eigen::Matrix4Xi FaceModel::computeColors(const FaceParameters& params) const
+{
+	assert(params.beta.rows() == m_albedoBasis.cols() && "face parameter beta has incorrect size");
+	// interpolate RGB values as floats
+	Eigen::Matrix3Xf colorsRGB = m_averageMesh.vertexColors.topRows<3>().cast<float>();
+	// reshape from matrix (3, numVertices) to vector (3 * numVertices)
+	Eigen::Map<Eigen::VectorXf> flatColorsRGB(colorsRGB.data(), 3 * getNumVertices());
+
+	auto& scaledBeta = (params.beta.array() * m_albedoStd.array()).matrix();
+	flatColorsRGB += m_albedoBasis * scaledBeta;
+
+	// convert back to RGBA int representation
+	Eigen::Matrix4Xi result(4, getNumVertices());
+	result.topRows<3>() = colorsRGB.cast<int>();
+	result.row(3).setConstant(255);
+	return result;
+}
+
+Eigen::Matrix3Xf FaceModel::computeNormals(const FaceParameters& params, const Eigen::Matrix3Xf& worldVertices) const
+{
+	int numVertices = getNumVertices();
+
+	Eigen::Matrix3Xf normals = Eigen::Matrix3Xf::Zero(3, numVertices);
+	//Eigen::VectorXi numFaces = Eigen::VectorXi::Zero(numVertices);
+
+	int numTriangles = m_averageMesh.triangles.cols();
+	for (int t=0;t<numTriangles;++t)
+	{
+		const auto& indices = m_averageMesh.triangles.col(t);
+		Eigen::Vector3f v0 = worldVertices.col(indices(0));
+		Eigen::Vector3f v1 = worldVertices.col(indices(1));
+		Eigen::Vector3f v2 = worldVertices.col(indices(2));
+
+		Eigen::Vector3f n = (v1-v0).cross(v2-v0).normalized();
+
+		normals.col(indices(0)) += n;
+		normals.col(indices(1)) += n;
+		normals.col(indices(2)) += n;
+	}
+
+	for (int i=0;i<numVertices;++i)
+	{
+		normals.col(i).normalize();
+	}
+
+	return normals;
 }
 
 FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, float age, float weight, float gender) const
@@ -76,6 +135,7 @@ FaceParameters FaceModel::computeShapeAttribute(const FaceParameters& params, fl
 	Eigen::VectorXf height_attribute(200);
 	height_attribute << 0.012269, -0.014972, 0.023427, -0.030798, 0.015781, 0.014637, -0.0053564, 0.00056268, -0.0058421, -0.014402, -0.00037659, 0.0046289, -0.0013334, 0.0081884, 0.005643, 0.0049922, 0.0043122, 0.0032663, -0.0098733, 0.0037353, 0.010524, -0.014441, -0.013814, -0.0036654, 0.0090254, -0.00786, 0.0065716, -0.0040186, 0.0064585, 0.00073369, -0.0093873, 0.0051652, -0.014847, 0.0080093, -0.0023533, 0.014164, -0.0052239, -0.0080147, -0.0042344, -0.018345, -0.012683, -0.0017831, 0.0097908, 0.005555, 0.0043595, -0.001146, -0.0059975, -0.0096099, 0.00032476, 0.0017427, 0.028304, 0.019416, 0.0017503, 0.01664, -0.00099394, 0.0067908, -0.0041914, -0.0072744, 0.010084, -0.00075899, -0.01703, -0.0036808, -0.0014255, -0.018292, -0.0030549, -0.014197, 0.02572, 0.0064962, -0.0093564, 0.0074793, -0.011539, -0.007575, 0.0024957, -0.0038174, 0.0080731, -0.010822, -0.0065963, 0.0061666, -0.014642, 0.0048664, 0.010666, 0.0026489, 0.0061831, 0.0091422, 0.0093207, -0.0034054, -0.0025345, 0.0081168, 0.0048398, -0.0079739, -0.0045627, 0.0094917, -0.0088698, -0.0017957, 0.0053196, -0.015861, 0.013128, 0.018358, 0.0073761, 0.00076072, -0.017191, -0.0019497, -0.012421, -0.0041578, 0.0070755, -0.0075711, 0.017173, -0.00038584, 0.0030383, -0.0014846, -0.0085008, 0.0039588, 0.0072789, 0.0020759, 0.01655, -0.0044912, 0.0022552, -0.0075263, -0.0033966, 0.0049001, -0.0062781, -0.010371, -0.004166, -0.0066866, 0.0008759, -0.0026883, -0.0035121, -0.011201, -0.00041162, -0.0098681, -0.0038078, -0.012997, 0.017376, 0.00014344, -0.011475, 0.001698, 0.010917, 0.0085375, -0.0045813, -0.0014596, -0.005331, 0.0068464, 0.0057593, -0.0071435, 0.0054429, 0.014647, 0.0041013, 0.0020729, 0.0047978, 0.0014123, -0.0076053, -0.0014605, -0.0054828, 0.0045129, -0.00068413, -0.0042156, -0.0063913, -0.011513, 0.00013507, 0.00054097, 0.0024249, -0.0025915, -0.017798, -0.011093, -0.0080166, 0.0017648, 0.0044813, -0.00028168, 0.0082877, 0.001033, -0.0010629, 0.0081358, 0.0032398, -0.0024912, 0.0017818, -0.0022931, -0.0066424, -0.0068656, 0.0013389, 0.0060137, -0.00066961, -0.0085524, -0.0075241, 0.004021, -0.0098846, 0.0070657, 0.0013695, -0.0067392, 0.008806, 0.0053669, -0.0045337, 0.0032961, -0.0068182, 0.013719, -0.002098, -0.0040329, 0.0085071, 0.0011306, 0.0022516, 1.3307e-07;
 
+	// FIXME this produces and error if params.alpha's size != 200
 	outparams.alpha = params.alpha + age * age_attribute + weight * weight_attribute + gender * gender_attribute;
 	return outparams;
 }

@@ -23,7 +23,7 @@ Visualizer::Visualizer() :
 
     createViewports();
     m_viewportSwitch = new SwitchControl(std::vector<std::string>{"Side by side", "Overlay"}, "", "v",
-                     [&](int state) { std::cout << "callback2" << std::endl;m_changed = true; });
+                     [&](int state, const std::vector<int>& callee) { m_changed = true; });
     addSwitch(m_viewportSwitch);
 }
 
@@ -42,6 +42,13 @@ void Visualizer::runOnce() {
         }
     }
     m_viewer.spinOnce(500);
+}
+
+void Visualizer::setCameraPose(Eigen::Matrix4f* pose) {
+    boost::lock_guard<boost::mutex> lock{m_mutex};
+
+    m_pose = pose;
+    m_changed = true;
 }
 
 void Visualizer::setJohnPcl(pcl::PointCloud<pcl::PointXYZRGB>::Ptr johnPcl) {
@@ -97,6 +104,18 @@ void Visualizer::createViewports() {
     // add switches
     for (auto& sw : m_switches) {
         sw->addToVisualizer(m_viewer, m_vpJohn);
+    }
+
+    // set camera pose
+    if (m_pose != nullptr) {
+        // Make camera look at the target.
+        Eigen::Vector4f objectOrigin = (*m_pose) * Eigen::Vector4f(0, 0, 0, 1);
+        Eigen::Vector4f cameraPos = objectOrigin + Eigen::Vector4f(0, 0, -0.7f, 0);
+        m_viewer.setCameraPosition(
+                cameraPos.x(), cameraPos.y(), cameraPos.z(),
+                objectOrigin.x(), objectOrigin.y(), objectOrigin.z(),
+                0, -1, 0);
+        m_pose = nullptr;
     }
 
     // add john

@@ -10,6 +10,8 @@ public:
     void run();
     void runOnce();
 
+    void setCameraPose(Eigen::Matrix4f* pose);
+
     void setJohnPcl(pcl::PointCloud<pcl::PointXYZRGB>::Ptr johnPcl);
     void setJohnFeatures(pcl::PointCloud<pcl::PointXYZRGB>::Ptr johnFeatures);
 
@@ -31,6 +33,8 @@ private:
     boost::mutex m_mutex;
 
     pcl::visualization::PCLVisualizer m_viewer;
+
+    Eigen::Matrix4f* m_pose;
 
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr m_johnPcl;
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr m_johnFeatures;

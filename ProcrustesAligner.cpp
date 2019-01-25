@@ -13,7 +13,11 @@ Matrix4f ProcrustesAligner::estimatePose(const std::vector<Vector3f>& sourcePoin
 	auto sourceMean = computeMean(sourcePoints);
 	auto targetMean = computeMean(targetPoints);
 
-	Matrix3f rotation = estimateRotation(sourcePoints, sourceMean, targetPoints, targetMean);
+	std::vector<Vector3f> sourcePointsCp = sourcePoints;
+	float scaleFactor = computeScale(sourcePointsCp, sourceMean, targetPoints, targetMean);
+
+	Matrix3f rotation = estimateRotation(sourcePointsCp, sourceMean, targetPoints, targetMean);
+
 	Vector3f translation = computeTranslation(sourceMean, targetMean);
 
 	// To apply the pose to point x on shape X in the case of Procrustes, we execute:
@@ -25,7 +29,36 @@ Matrix4f ProcrustesAligner::estimatePose(const std::vector<Vector3f>& sourcePoin
 	estimatedPose.block(0, 0, 3, 3) = rotation;
 	estimatedPose.block(0, 3, 3, 1) = rotation * translation - rotation * targetMean + targetMean;
 
-	return estimatedPose;
+	Matrix4f scale = Matrix4f::Identity();
+	scale(0, 0) = scaleFactor;
+	scale(1, 1) = scaleFactor;
+	scale(2, 2) = scaleFactor;
+
+	return estimatedPose * scale;
+}
+
+float ProcrustesAligner::computeScale(std::vector<Vector3f>& sourcePoints, const Vector3f& sourceMean,
+        const std::vector<Vector3f>& targetPoints, const Vector3f& targetMean) {
+
+    float sourceDistSq = 0;
+    for (auto& p : sourcePoints) {
+        sourceDistSq += (p - sourceMean).squaredNorm();
+    }
+
+    float targetDistSq = 0;
+    for (auto& p : targetPoints) {
+        targetDistSq += (p - targetMean).squaredNorm();
+    }
+
+    // scale points for better rotation estimation
+    float scalingFactor = std::sqrt(targetDistSq / 5) / std::sqrt(sourceDistSq / 5);
+	sourcePoints[0] += (sourcePoints[0] - sourceMean) * (scalingFactor - 1.0);
+	sourcePoints[1] += (sourcePoints[1] - sourceMean) * (scalingFactor - 1.0);
+	sourcePoints[2] += (sourcePoints[2] - sourceMean) * (scalingFactor - 1.0);
+	sourcePoints[3] += (sourcePoints[3] - sourceMean) * (scalingFactor - 1.0);
+	sourcePoints[4] += (sourcePoints[4] - sourceMean) * (scalingFactor - 1.0);
+
+    return scalingFactor;
 }
 
 

@@ -40,6 +40,8 @@ include_directories(${CERES_INCLUDE_DIRS})
 
 # Set files to be compiled
 set(HEADER_FILES
+        cxxopts.hpp
+        Settings.h
 		CoarseAlignment.h
 		FeaturePointExtractor.h
 		ProcrustesAligner.h
@@ -47,6 +49,7 @@ set(HEADER_FILES
 		Mesh.h
 		FaceModel.h
 		Optimizer.h
+        Rasterizer.h
 		Sensor.h
 		stdafx.h
 		utils.h
@@ -57,6 +60,7 @@ set(SOURCE_FILES
 		CoarseAlignment.cpp
 		FaceModel.cpp
 		Optimizer.cpp
+        Rasterizer.cpp
 		main.cpp
 		utils.cpp
         SwitchControl.cpp
@@ -74,6 +78,9 @@ if (MSVC)
 	    PROPERTIES
 	    COMPILE_FLAGS "/Ycstdafx.h"
 	)
+    
+    # Enable link time code generation, as Ceres binaries require it.
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG:INCREMENTAL")
 endif()
 
 add_executable(face_reconstruction ${HEADER_FILES} ${SOURCE_FILES})

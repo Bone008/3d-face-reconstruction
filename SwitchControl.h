@@ -8,7 +8,7 @@ public:
             const std::vector<std::string>& states,
             const std::string& keyBackward,
             const std::string& keyForward,
-            std::function<void(int)> callee);
+            std::function<void(int, const std::vector<int>&)> callee);
     void addToVisualizer(pcl::visualization::PCLVisualizer& viewer, int viewportID);
     int getState();
 private:
@@ -21,8 +21,11 @@ private:
     const std::vector<std::string> m_states;
     const std::string m_keyBackward;
     const std::string m_keyForward;
-    const std::function<void(int)> m_callee;
+    const std::function<void(int, const std::vector<int>&)> m_callee;
 
     int m_currentState;
     boost::signals2::connection m_callbackConnection;
+
+    int m_selectedProp = 0;
+    std::vector<int> m_props = std::vector<int>{0,0,0};
 };
