@@ -309,5 +309,19 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::cout << "Some final values of alpha: " << params.alpha.head<10>().transpose() << std::endl;
 	std::cout << "Some final values of beta: " << params.beta.head<10>().transpose() << std::endl;
 
+	// final composite image
+	saveBitmap("afinal.bmp", width, height, [&](unsigned int x, unsigned int y) {
+		y = height - y - 1;
+		const PixelData& synthPixel = rasterizer.pixelResults[y * width + x];
+		if (synthPixel.isValid) {
+			Vector4i col(0, 0, 0, 255);
+			col.head<3>() = (synthPixel.albedo - colorDelta).cast<int>().cwiseMax(0).cwiseMin(255);
+			return col;
+		}
+
+		const pcl::PointXYZRGBNormal& inputPixel = (*croppedCloud)(x, y);
+		return inputPixel.getRGBVector4i();
+	});
+
 	return params;
 }
