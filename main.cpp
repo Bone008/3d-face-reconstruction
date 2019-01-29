@@ -11,13 +11,19 @@
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/features/normal_3d.h>
 #include "SwitchControl.h"
+#include "Visualizer.h"
 
 const std::string baseModelDir = "../data/MorphableModel/";
 
 Settings gSettings;
-pcl::visualization::PCLVisualizer viewer("PCL Viewer");
 
-void highlightFeaturePoints(std::vector<Eigen::Vector3f> &featurePoints, const std::string &name) {
+// TODO add switch for feature points (on/off)
+// TODO add switch for different intermediate outputs
+// TODO show progress on screen
+// TODO exit on escape key (also stop optimization)
+Visualizer visualizer;
+
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr getFeaturePointPcl(std::vector<Eigen::Vector3f> &featurePoints) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr points_to_highlight(new pcl::PointCloud<pcl::PointXYZRGB>);
 
     for (auto const &point: featurePoints) {
@@ -31,9 +37,7 @@ void highlightFeaturePoints(std::vector<Eigen::Vector3f> &featurePoints, const s
         points_to_highlight->points.push_back(selected_point);
     }
 
-    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> red(points_to_highlight);
-    viewer.addPointCloud<pcl::PointXYZRGB>(points_to_highlight, red, name);
-    viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 10, name);
+    return points_to_highlight;
 }
 
 int main(int argc, char **argv) {
@@ -66,111 +70,120 @@ int main(int argc, char **argv) {
 	std::string inputFace = gSettings.inputFile;
 	std::string inputFeatures = inputFace.substr(0, inputFace.length() - 3) + "points";
 	std::cout << "Loading input data ..." << std::endl;
-	std::cout << "    Input file: " << inputFace << std::endl;
-	Sensor inputSensor = VirtualSensor(inputFace, inputFeatures);
-	
+    std::cout << "    Input file: " << inputFace << std::endl;
+    Sensor inputSensor = VirtualSensor(inputFace, inputFeatures);
+
 	// visualize input point cloud (John)
-	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
-	viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "inputCloud");
-	highlightFeaturePoints(inputSensor.m_featurePoints, "inputCloudFeatures");
+	visualizer.setJohnPcl(inputSensor.m_cloud);
+    visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
+    visualizer.runOnce();
+
+    FaceModel* model;
+    FaceParameters paramsDefault;
+    FaceParameters params;
+    Eigen::Matrix4f poseWithoutICP;
+    Eigen::Matrix4f pose;
+
+    FaceParameters currentParams = params;
+    Eigen::Matrix4f currentPose = pose;
+    bool optimized = true;
+    int currentAge = 0;
+    int currentWeight = 0;
+    int currentGender = 0;
+    bool albedoOff = false;
 
 
-	std::cout << "Loading face model ..." << std::endl;
-	FaceModel model(baseModelDir);
+    auto renderPcl = [&]() {
+        if (!optimized)
+            currentParams = model->createDefaultParameters();
+        if (albedoOff)
+            currentParams.beta.setZero();
 
-	std::cout << "Coarse alignment ..." << std::endl;
-	Eigen::Matrix4f poseWithoutICP = computeCoarseAlignmentProcrustes(model, inputSensor);
-	Eigen::Matrix4f pose = computeCoarseAlignmentICP(model, inputSensor, poseWithoutICP);
-	
-	FaceParameters params;
-	if (gSettings.skipOptimization) {
-		std::cout << "Skipping parameter optimization." << std::endl;
-		params = model.createDefaultParameters();
-	}
-	else {
-		std::cout << "Optimizing parameters ..." << std::endl;
-		params = optimizeParameters(model, pose, inputSensor);
-	}
+        FaceParameters attributeParams = model->computeShapeAttribute(currentParams, currentAge, currentWeight, currentGender);
 
-	Eigen::VectorXf finalShape = model.computeShape(params);
-	Eigen::Matrix4Xi finalColors = model.computeColors(params);
+        Eigen::VectorXf finalShape = model->computeShape(attributeParams);
+        Eigen::Matrix4Xi finalColors = model->computeColors(attributeParams);
 
-	std::cout << "Done!" << std::endl;
+        // visualize final reconstruction (Steve)
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, currentPose);
+        visualizer.setStevePcl(transformedCloud);
+    };
 
-	// visualize final reconstruction (Steve)
-	pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-	pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, pose);
-	viewer.addPolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
 
-	FaceParameters defaultParams = model.createDefaultParameters();
+    auto setAndRenderPcl = [&](FaceParameters params) {
+        currentParams = params;
+        renderPcl();
+    };
 
-	std::vector<std::string> states;
+    boost::thread optimizingThread([&]() {
+        // load face model (Steve)
+        std::cout << "Loading face model ..." << std::endl;
+        model = new FaceModel(baseModelDir);
+        paramsDefault = model->createDefaultParameters();
+        visualizer.setSteveVertices(trianglesToVertexList(model->m_averageMesh.triangles));
+
+        std::cout << "Coarse alignment ..." << std::endl;
+        poseWithoutICP = computeCoarseAlignmentProcrustes(*model, inputSensor);
+        pose = computeCoarseAlignmentICP(*model, inputSensor, poseWithoutICP);
+        currentPose = pose;
+        visualizer.setCameraPose(&pose);
+
+        if (gSettings.skipOptimization) {
+            std::cout << "Skipping parameter optimization." << std::endl;
+            params = model->createDefaultParameters();
+        }
+        else {
+            std::cout << "Optimizing parameters ..." << std::endl;
+            params = optimizeParameters(*model, pose, inputSensor, setAndRenderPcl);
+        }
+
+        std::cout << "Done!" << std::endl;
+        setAndRenderPcl(params);
+    });
+
+    // add switch (optimized/default)
+    std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Default");
-	FaceParameters newParams=params;
-	Eigen::Matrix4f newPose=pose;
+    SwitchControl* scOptim = new SwitchControl(states, "", "Tab", [&](int state, const std::vector<int>&props) {
+        optimized = (state == 0);
+        renderPcl();
+    });
+	visualizer.addSwitch(scOptim);
 
-	SwitchControl scOptim(viewer, states, "", "Tab",0, [&](int state, const std::vector<int>&props) {
-		std::cout << "Switching to " << (state == 0 ? "optimized" : "default") << " face." << std::endl;
-		newParams = (state == 0 ? params : defaultParams);
-		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
-		newPose = pose;
-		Eigen::VectorXf finalShape = model.computeShape(newParams);
-		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
-		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
-		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
-	});
-	std::vector<std::string> statesICP;
-	statesICP.emplace_back("with ICP");
-	statesICP.emplace_back("without ICP");
-	SwitchControl scICP(viewer, statesICP, "", "i",2, [&](int state, const std::vector<int>&props) {
-		std::cout << "Switching to " << (state == 0 ? "ICP" : "withoutICP") << " face." << std::endl;
-		newPose = (state == 0 ? pose: poseWithoutICP);
+	// add switch (icp on/off)
+    std::vector<std::string> statesICP;
+    statesICP.emplace_back("with ICP");
+    statesICP.emplace_back("without ICP");
+    SwitchControl* scICP = new SwitchControl(statesICP, "", "i", [&](int state, const std::vector<int>&props) {
+        currentPose = (state == 0 ? pose : poseWithoutICP);
+        renderPcl();
+    });
+    visualizer.addSwitch(scICP);
 
-		Eigen::VectorXf finalShape = model.computeShape(newParams);
-		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
-		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
-		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
-	});
-	std::vector<std::string> statesAlbedo; 
-	statesAlbedo.emplace_back("with albedo");
-	statesAlbedo.emplace_back("without albedo");
+    // add switch (albedo on/off)
+    std::vector<std::string> statesAlbedo;
+    statesAlbedo.emplace_back("with albedo");
+    statesAlbedo.emplace_back("without albedo");
+    SwitchControl* scAlbedo = new SwitchControl(statesAlbedo, "", "space", [&](int state, const std::vector<int>&props) {
+        albedoOff = (state != 0);
+        renderPcl();
+    });
+    visualizer.addSwitch(scAlbedo);
 
-	FaceParameters withoutAlbedo = newParams;
-	withoutAlbedo.beta.array() = { 0 };
+    // add switch (age/gender/weight)
+    std::vector<std::string> statesAttribute;
+    SwitchControl* scAttribute = new SwitchControl(statesAttribute, "Left", "Right", [&](int state, const std::vector<int>&props) {
+        currentAge = props[0];
+        currentWeight = props[1];
+        currentGender = props[2];
+        renderPcl();
+    });
+    visualizer.addSwitch(scAttribute);
 
-	SwitchControl scAlbedo(viewer, statesAlbedo, "", "space",4, [&](int state, const std::vector<int>&props) {
-		std::cout << "Switching to " << (state == 0 ? "with albedo" : "without albedo") << " face." << std::endl;
-		newParams = (state == 0 ? newParams : withoutAlbedo);
-		
-		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
+    visualizer.run();
+    optimizingThread.join();
 
-		Eigen::VectorXf finalShape = model.computeShape(newParams);
-		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
-		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
-		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
-	});
-	std::vector<std::string> statesAttribute;
-	SwitchControl scAttribute(viewer, statesAttribute, "Left", "Right", 0, [&](int state, const std::vector<int>&props) {
-		newParams = model.computeShapeAttribute(newParams, props[0], props[1], props[2]);
-
-		Eigen::VectorXf finalShape = model.computeShape(newParams);
-		Eigen::Matrix4Xi finalColors = model.computeColors(newParams);
-		pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-		pcl::transformPointCloud(*pointsToCloud(finalShape, finalColors), *transformedCloud, newPose);
-		viewer.updatePolygonMesh<pcl::PointXYZRGB>(transformedCloud, trianglesToVertexList(model.m_averageMesh.triangles), "steveMesh");
-	});
-
-	// Make camera look at the target.
-	Eigen::Vector4f objectOrigin = pose * Eigen::Vector4f(0, 0, 0, 1);
-	Eigen::Vector4f cameraPos = objectOrigin + Eigen::Vector4f(0, 0, -0.7f, 0);
-	viewer.setCameraPosition(cameraPos.x(), cameraPos.y(), cameraPos.z(), objectOrigin.x(), objectOrigin.y(), objectOrigin.z(), 0, -1, 0);
-
-	while (!viewer.wasStopped()) {
-		viewer.spinOnce(500);
-	}
 	return 0;
 }

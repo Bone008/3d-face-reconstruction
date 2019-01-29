@@ -18,7 +18,6 @@ public:
 	std::vector<Eigen::Vector3f> m_averageFeaturePoints;
 
 	// Vertex positions of the average face. Packed shape (3 * numVertices).
-	// TODO remove "shape" from name as it is not accurate
 	Mesh m_averageMesh;
 
 	// Orthogonal basis for the shape parameters alpha. Shape (3 * numVertices, numEigenVec)

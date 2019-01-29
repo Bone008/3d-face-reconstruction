@@ -340,6 +340,7 @@ ASALocalRun/
 # build output
 build/
 cmake-build-debug/
+cmake-build-release/
 
 # input dataset
 data/rgbd_face_dataset/*
