@@ -72,6 +72,25 @@ int main(int argc, char **argv) {
     std::cout << "    Input file: " << inputFace << std::endl;
     Sensor inputSensor = VirtualSensor(inputFace, inputFeatures);
 
+    saveBitmap("rgbinput.bmp", inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
+        y = inputSensor.m_cloud->height - y - 1;
+
+        const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
+        return inputPixel.getRGBVector4i();
+    });
+
+    saveBitmap("dinput.bmp", inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
+        y = inputSensor.m_cloud->height - y - 1;
+
+        const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
+        int depth = (int)((1.0f-inputPixel.z) * 255);
+        if (depth < 0)
+            depth = 0;
+        else if (depth > 255)
+            depth = 255;
+        return Eigen::Vector4i(depth, depth, depth, 255);
+    });
+
 	// visualize input point cloud (John)
 	visualizer.setJohnPcl(inputSensor.m_cloud);
     visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
