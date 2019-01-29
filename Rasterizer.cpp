@@ -32,7 +32,7 @@ void Rasterizer::compute(const FaceParameters& params) {
 	Matrix4Xi vertexAlbedos;
 	Matrix3Xf worldNormals;
 	project(params, projectedVertices, vertexAlbedos, worldNormals);
-	rasterize(projectedVertices, vertexAlbedos, worldNormals);
+	rasterize(projectedVertices, vertexAlbedos, worldNormals, params.gamma);
 
 	numCalls++;
 }
@@ -51,7 +51,7 @@ void Rasterizer::project(const FaceParameters& params, Matrix3Xf& outProjectedVe
 	outWorldNormals = pose.topLeftCorner<3, 3>() * normals;
 }
 
-void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals) {
+void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals, const Eigen::VectorXf& gamma) {
 	// Reset output.
 	std::fill(pixelResults.begin(), pixelResults.end(), PixelData());
 
@@ -61,6 +61,22 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 	depthBuffer.setConstant(std::numeric_limits<float>::infinity());
 
 	Vector3f L = Vector3f(0, 0, -1);
+
+    float c1 = 0.429043f;
+    float c2 = 0.511664f;
+    float c3 = 0.743125f;
+    float c4 = 0.886227f;
+    float c5 = 0.247708f;
+
+    float _L00 = gamma(0);
+    float _L1N1 = gamma(1);
+    float _L10 = gamma(2);
+    float _L11 = gamma(3);
+    float _L2N2 = gamma(4);
+    float _L2N1 = gamma(5);
+    float _L20 = gamma(6);
+    float _L21 = gamma(7);
+    float _L22 = gamma(8);
 
 	const Matrix3Xi& triangles = model.m_averageMesh.triangles;
 
@@ -114,15 +130,24 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 						out.vertexIndices[2] = indices(2);
 						out.barycentricCoordinates = baryCoords;
 
-						/*Vector3f n = baryCoords(0) * n0 + baryCoords(1) * n1 + baryCoords(2) * n2;
+						Vector3f n = baryCoords(0) * n0 + baryCoords(1) * n1 + baryCoords(2) * n2;
 						n.normalize();
 
-						float E = n.dot(L) * 255.0f;*/
+						out.normal = n;
 
-						out.albedo =
+						float E = c1 * _L22 * (n(0)*n(0) - n(1)*n(1)) +
+                                  c3 * _L20 * (n(2) * n(2)) +
+                                  c4 * _L00 -
+                                  c5 * _L20 +
+                                  2.0 * c1 * (_L2N2 * n(0) * n(1) + _L21 * n(0) * n(2) + _L2N1 * n(1) * n(2)) +
+                                  2.0 * c2 * (_L11 * n(0) + _L1N1 * n(1) + _L10 * n(2));
+
+						Vector3f albedo =
 							baryCoords(0) * vertexAlbedos.col(indices(0)).head<3>().cast<float>() +
 							baryCoords(1) * vertexAlbedos.col(indices(1)).head<3>().cast<float>() +
 							baryCoords(2) * vertexAlbedos.col(indices(2)).head<3>().cast<float>();
+
+						out.albedo = albedo * E;
 
 						//out.albedo = Vector3f(E, E, E);
 

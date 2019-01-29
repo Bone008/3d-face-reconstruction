@@ -13,6 +13,7 @@ using namespace Eigen;
 // only the first ones will be optimized over.
 const unsigned int NUM_ALPHA_VEC = 160;
 const unsigned int NUM_BETA_VEC = 80;
+const unsigned int NUM_GAMMA_VEC = 9;
 
 const unsigned int NUM_DENSE_RESIDUALS = 4 + 3;
 
@@ -22,7 +23,7 @@ struct ResidualFunctor {
 		: inputPoint(inputPoint), rasterizerResult(rasterizerResult), model(model), pose(pose), intrinsics(intrinsics), colorDelta(colorDelta) {}
 
 	template <typename T>
-	bool operator()(T const* alpha, T const* beta, T* residual) const {
+	bool operator()(T const* alpha, T const* beta, T const* gamma, T* residual) const {
 		typedef Matrix<T, 2, 1> Vector2T;
 		typedef Matrix<T, 3, 1> Vector3T;
 		typedef Matrix<T, 2, 2> Matrix2T;
@@ -86,6 +87,33 @@ struct ResidualFunctor {
 			albedo += barycentricCoordinates[i] * vertexAlbedos[i];
 		}
 
+		Vector3T n = rasterizerResult.normal.cast<T>();
+
+		T c1 = T(0.429043f);
+		T c2 = T(0.511664f);
+		T c3 = T(0.743125f);
+		T c4 = T(0.886227f);
+		T c5 = T(0.247708f);
+
+		T _L00 = gamma[0];
+		T _L1N1 = gamma[1];
+		T _L10 = gamma[2];
+		T _L11 = gamma[3];
+		T _L2N2 = gamma[4];
+		T _L2N1 = gamma[5];
+		T _L20 = gamma[6];
+		T _L21 = gamma[7];
+		T _L22 = gamma[8];
+
+		T E = c1 * _L22 * (n(0)*n(0) - n(1)*n(1)) +
+				  c3 * _L20 * (n(2) * n(2)) +
+				  c4 * _L00 -
+				  c5 * _L20 +
+				  2.0 * c1 * (_L2N2 * n(0) * n(1) + _L21 * n(0) * n(2) + _L2N1 * n(1) * n(2)) +
+				  2.0 * c2 * (_L11 * n(0) + _L1N1 * n(1) + _L10 * n(2));
+
+		albedo = albedo * E;
+
 		Vector3T inputPos = Vector3T(T(inputPoint.x), T(inputPoint.y), T(inputPoint.z));
 		Vector3T pointToPointDist = inputPos - worldPos;
 		residual[0] = pointToPointDist(0);
@@ -134,13 +162,14 @@ struct RegularizerFunctor
 };
 
 struct RasterizerFunctor : public ceres::IterationCallback {
-	RasterizerFunctor(Rasterizer& rasterizer, const double* alpha, const double* beta)
-		: alpha(alpha), beta(beta), rasterizer(rasterizer) {}
+	RasterizerFunctor(Rasterizer& rasterizer, const double* alpha, const double* beta, const double* gamma)
+		: alpha(alpha), beta(beta), gamma(gamma), rasterizer(rasterizer) {}
 
 	virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
 		FaceParameters params = rasterizer.model.createDefaultParameters();
 		params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha, NUM_ALPHA_VEC).cast<float>();
 		params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta, NUM_BETA_VEC).cast<float>();
+		params.gamma.head<NUM_GAMMA_VEC>() = Map<const VectorXd>(gamma, NUM_GAMMA_VEC).cast<float>();
 
 		rasterizer.compute(params);
 		return ceres::CallbackReturnType::SOLVER_CONTINUE;
@@ -150,6 +179,7 @@ private:
 	Rasterizer& rasterizer;
 	const double* alpha;
 	const double* beta;
+	const double* gamma;
 };
 
 pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
@@ -234,6 +264,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	std::array<double, NUM_ALPHA_VEC> alpha{};
 	std::array<double, NUM_BETA_VEC> beta{};
+	std::array<double, NUM_GAMMA_VEC> gamma{};
 
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;
@@ -270,7 +301,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
 	Rasterizer rasterizer({ width, height }, model, pose, inputSensor.m_cameraIntrinsics);
-	RasterizerFunctor rasterizerCallback(rasterizer, alpha.data(), beta.data());
+	RasterizerFunctor rasterizerCallback(rasterizer, alpha.data(), beta.data(), gamma.data());
 	// Initially call rasterizer once as the callback is only invoked AFTER each iteration.
 	rasterizerCallback(ceres::IterationSummary());
 
@@ -297,9 +328,9 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 			if (std::isnan(point.normal_x)) {
 				continue;
 			}
-			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC>(
+			ceres::CostFunction* costFunc = new ceres::AutoDiffCostFunction<ResidualFunctor, NUM_DENSE_RESIDUALS, NUM_ALPHA_VEC, NUM_BETA_VEC, NUM_GAMMA_VEC>(
 				new ResidualFunctor(point, rasterizer.pixelResults[y * width + x], model, pose, inputSensor.m_cameraIntrinsics, colorDelta));
-			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data());
+			problem.AddResidualBlock(costFunc, NULL, alpha.data(), beta.data(), gamma.data());
 		}
 	}
 
@@ -325,9 +356,11 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	FaceParameters params = model.createDefaultParameters();
 	params.alpha.head<NUM_ALPHA_VEC>() = Map<const VectorXd>(alpha.data(), NUM_ALPHA_VEC).cast<float>();
 	params.beta.head<NUM_BETA_VEC>() = Map<const VectorXd>(beta.data(), NUM_BETA_VEC).cast<float>();
+	params.gamma.head<NUM_GAMMA_VEC>() = Map<const VectorXd>(gamma.data(), NUM_GAMMA_VEC).cast<float>();
 
 	std::cout << "Some final values of alpha: " << params.alpha.head<10>().transpose() << std::endl;
 	std::cout << "Some final values of beta: " << params.beta.head<10>().transpose() << std::endl;
+	std::cout << "Some final values of gamma: " << params.gamma.head<10>().transpose() << std::endl;
 
 	return params;
 }

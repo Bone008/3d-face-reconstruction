@@ -12,6 +12,7 @@ struct PixelData {
 	Eigen::Vector2f pixelCenter;
 	Eigen::Vector3f barycentricCoordinates;
 	Eigen::Vector3f albedo;
+	Eigen::Vector3f normal;
 	bool isValid;
 };
 
@@ -36,7 +37,7 @@ private:
 	Eigen::ArrayXXf depthBuffer;
 
 	void project(const FaceParameters& params, Eigen::Matrix3Xf& outProjectedVertices, Eigen::Matrix4Xi& outVertexAlbedos, Eigen::Matrix3Xf& outWorldNormals);
-	void rasterize(const Eigen::Matrix3Xf& projectedVertices, const Eigen::Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals);
+	void rasterize(const Eigen::Matrix3Xf& projectedVertices, const Eigen::Matrix4Xi& vertexAlbedos, const Eigen::Matrix3Xf& worldNormals, const Eigen::VectorXf& gamma);
 
 	void writeDebugImages();
 };

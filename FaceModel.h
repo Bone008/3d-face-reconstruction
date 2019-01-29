@@ -6,6 +6,8 @@ struct FaceParameters {
 	Eigen::VectorXf alpha;
 	// Albedo parameters.
 	Eigen::VectorXf beta;
+	// Illumination parameters.
+	Eigen::VectorXf gamma;
 	// ... later: lighting, expression ...
 };
 
