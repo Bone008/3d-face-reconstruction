@@ -3,7 +3,6 @@
 #include <fstream>
 #include <pcl/common/common.h>
 #include <pcl/visualization/pcl_visualizer.h>
-#include "Sensor.h"
 
 const int NUM_EXPECTED_FEATURE_POINTS = 6;
 

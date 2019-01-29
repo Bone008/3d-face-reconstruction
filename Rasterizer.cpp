@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "Rasterizer.h"
+#include "FaceModel.h"
+#include "BMP.h"
 
 using namespace Eigen;
 

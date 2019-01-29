@@ -4,8 +4,9 @@
 #include "OptimizerInit.h"
 #include "Rasterizer.h"
 #include "BMP.h"
-#include "utils.h"
 #include "Settings.h"
+#include "Sensor.h"
+#include "utils.h"
 
 using namespace Eigen;
 

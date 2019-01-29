@@ -1,10 +1,5 @@
 #pragma once
-#include <pcl/io/io.h>
-#include <pcl/io/pcd_io.h>
 #include <pcl/features/integral_image_normal.h>
-#include <pcl/visualization/cloud_viewer.h>
-#include <pcl/features/normal_3d.h>
-
 #include "FeaturePointExtractor.h"
 
 class Sensor {

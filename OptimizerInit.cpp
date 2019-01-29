@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "OptimizerInit.h"
+#include "FaceModel.h"
 #include "utils.h"
+#include <pcl/kdtree/kdtree_flann.h>
 
 using namespace Eigen;
 
