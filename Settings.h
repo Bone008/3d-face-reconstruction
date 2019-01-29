@@ -3,7 +3,8 @@
 // Stores command line parameters.
 struct Settings {
 	std::string inputFile;
-	
+	std::string kinectOutputFile;
+	bool useKinect;
 	bool skipOptimization;
 	
 	unsigned int optimizationStride;

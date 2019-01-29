@@ -16,49 +16,58 @@ public:
 
     std::vector<Eigen::Vector3f> m_points;
 
-    FeaturePointExtractor(const std::string &filenameIndices, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud) {
+    FeaturePointExtractor(const std::string& filenameIndices, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& cloud) {
         // check if 5 feature points' indices exist
-        std::ifstream fileIndices(filenameIndices, std::ios::in);
-
-        if (!fileIndices.is_open()) {
+        if (!boost::filesystem::exists(filenameIndices)) {
             // manual selection
-            std::cout << "Couldn't open indices files. Please pick points using shift+klick and write into file "
-                      << filenameIndices << std::endl;
-            manualFeaturePointSelection(cloud);
-            exit(0);
+            std::cout << "Pick feature points using shift+click!" << std::endl;
+            manualFeaturePointSelection(cloud, filenameIndices);
         }
 
-        loadFromFile(fileIndices);
-    }
-
-    static void pointPickingHandler(const pcl::visualization::PointPickingEvent &event, void *) {
-        int pInd = event.getPointIndex();
-        if (pInd == -1)
-            return;
-
-        float x, y, z;
-        event.getPoint(x, y, z);
-        std::cout << x << " " << y << " " << z << std::endl;
+        loadFromFile(filenameIndices);
     }
 
 private:
 
-    void manualFeaturePointSelection(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud) {
-        pcl::visualization::PCLVisualizer viewer("PCL Viewer");
+    void manualFeaturePointSelection(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& cloud, const std::string& filenameIndices) {
+        std::ofstream outfile;
+        outfile.open(filenameIndices);
+
+        pcl::visualization::PCLVisualizer viewer("Pick feature points");
 
         // Draw output point cloud:
         pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(cloud);
         viewer.addPointCloud<pcl::PointXYZRGB>(cloud, rgb, "cloud");
 
         viewer.setCameraPosition(-0.24917, -0.0187087, -1.29032, 0.0228136, -0.996651, 0.0785278);
-        viewer.registerPointPickingCallback(FeaturePointExtractor::pointPickingHandler);
+        int count = 0;
+        bool stopped = false;
+        viewer.registerPointPickingCallback([&](const pcl::visualization::PointPickingEvent& event) {
+            int pInd = event.getPointIndex();
+            if (pInd == -1)
+                return;
 
-        while (!viewer.wasStopped()) {
+            float x, y, z;
+            event.getPoint(x, y, z);
+            std::cout << "  Picked point: " << x << " " << y << " " << z << std::endl;
+            outfile << x << " " << y << " " << z << std::endl;
+
+            count++;
+            if (count >= 6) {
+                stopped = true;
+            }
+        });
+
+        while (!viewer.wasStopped() && !stopped) {
             viewer.spinOnce(500);
         }
+        viewer.close();
+
+        outfile.close();
     }
 
-    void loadFromFile(std::ifstream &fileIndices) {
+    void loadFromFile(const std::string& filenameIndices) {
+        std::ifstream fileIndices(filenameIndices, std::ios::in);
         Eigen::Vector3f v;
         while (fileIndices >> v[0] >> v[1] >> v[2]) {
             Eigen::Vector3f copy = v;
