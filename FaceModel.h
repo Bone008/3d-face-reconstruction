@@ -54,6 +54,27 @@ public:
 		params.alpha.setZero();
 		params.beta.resize(getNumEigenVec());
 		params.beta.setZero();
+		params.gamma.resize(9);
+		//params.gamma.setConstant(1.0f);
+
+		params.gamma(0) = .79f;
+		params.gamma(1) = .39f;
+		params.gamma(2) = -.34f;
+		params.gamma(3) = .79f;
+		params.gamma(4) = .79f;
+
+		/*
+		 * _L00 ("L00", Vector) = (.79, .44, .54, 1)
+        _L1N1 ("L1-1", Vector) = (.39, .35, .60, 1)
+        _L10 ("L10", Vector) = (-.34, -.18, -.27, 1)
+        _L11 ("L11", Vector) = (-.29, -.06, .01, 1)
+        _L2N2 ("L2-2", Vector) = (-.11, -.05, -.12, 1)
+        _L2N1 ("L2-1", Vector) = (-.26, -.22, -.47, 1)
+        _L20 ("L20", Vector) = (-.16, -.09, -.15, 1)
+        _L21 ("L21", Vector) = (.56, .21, .14, 1)
+        _L22 ("L22", Vector) = (.21, -.05, -.30, 1)
+		 */
+
 		return params;
 	}
 
