@@ -40,6 +40,7 @@ int main(int argc, char **argv) {
 		options.add_options()
 			("help", "Print help.")
 			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile)->default_value("../data/rgbd_face_dataset/006_00_cloud.pcd"))
+			("p,point-size", "Display size of the points of the input point cloud.", cxxopts::value(gSettings.inputCloudPointSize)->default_value("2.0"))
 			("o,skip-optimization", "Skip fine optimization of face parameters completely.", cxxopts::value(gSettings.skipOptimization)->default_value("false"))
 			("opt-stride", "Pixel stride for fine optimization (>= 1).", cxxopts::value(gSettings.optimizationStride)->default_value("2"))
 			("s,opt-step", "Initial trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize)->default_value("0.1"))
@@ -69,7 +70,7 @@ int main(int argc, char **argv) {
 	
 	// visualize input point cloud (John)
 	viewer.addPointCloud<pcl::PointXYZRGB>(inputSensor.m_cloud, "inputCloud");
-	viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "inputCloud");
+	viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, gSettings.inputCloudPointSize, "inputCloud");
 	highlightFeaturePoints(inputSensor.m_featurePoints, "inputCloudFeatures");
 
 

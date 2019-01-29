@@ -3,6 +3,7 @@
 // Stores command line parameters.
 struct Settings {
 	std::string inputFile;
+	double inputCloudPointSize;
 	
 	bool skipOptimization;
 	
