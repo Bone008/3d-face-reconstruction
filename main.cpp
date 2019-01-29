@@ -96,11 +96,22 @@ int main(int argc, char **argv) {
         return inputPixel.getRGBVector4i();
     });
 
+    float maxDepth = 0.0f;
+    int inW = inputSensor.m_cloud->width;
+    int inH = inputSensor.m_cloud->height;
+    for (int y=0;y<inH;++y) {
+        for (int x=0;x<inW;++x) {
+            const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
+            if (inputPixel.z > maxDepth)
+                maxDepth = inputPixel.z;
+        }
+    }
+
     saveBitmap("dinput.bmp", inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
         y = inputSensor.m_cloud->height - y - 1;
 
         const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
-        int depth = (int)((1.0f-inputPixel.z) * 255);
+        int depth = (int)((1.0f-inputPixel.z/maxDepth) * 255);
         if (depth < 0)
             depth = 0;
         else if (depth > 255)
