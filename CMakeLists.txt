@@ -55,7 +55,8 @@ set(HEADER_FILES
 		stdafx.h
 		utils.h
 		SwitchControl.h
-        Visualizer.h)
+        Visualizer.h
+		OpenNI2Sensor.h)
 set(SOURCE_FILES
 		ProcrustesAligner.cpp
 		CoarseAlignment.cpp
@@ -66,7 +67,9 @@ set(SOURCE_FILES
 		main.cpp
 		utils.cpp
         SwitchControl.cpp
-        Visualizer.cpp)
+        Visualizer.cpp
+		OpenNI2Sensor.cpp
+)
 
 if (MSVC)
     # For precompiled header.
@@ -80,7 +83,7 @@ if (MSVC)
 	    PROPERTIES
 	    COMPILE_FLAGS "/Ycstdafx.h"
 	)
-    
+
     # Enable link time code generation, as Ceres binaries require it.
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG:INCREMENTAL")
 endif()

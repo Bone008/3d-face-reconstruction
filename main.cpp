@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Settings.h"
 #include "VirtualSensor.h"
+#include "OpenNI2Sensor.h"
 #include "FaceModel.h"
 #include "CoarseAlignment.h"
 #include "Optimizer.h"
@@ -43,6 +44,9 @@ int main(int argc, char **argv) {
 		cxxopts::Options options(argv[0], "Program to reconstruct faces from RGB-D images.");
 		options.add_options()
 			("help", "Print help.")
+            ("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile)->default_value("../data/rgbd_face_dataset/006_00_cloud.pcd"))
+            ("k,use-kinect", "Acquire point cloud from kinect sensor.", cxxopts::value(gSettings.useKinect)->default_value("false"))
+            ("kinect-output", "Output point cloud file (*.pcl) when using kinect sensor.", cxxopts::value(gSettings.kinectOutputFile)->default_value("../data/sensor_output.pcd"))
 			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile)->default_value("../data/rgbd_face_dataset/006_00_cloud.pcd"))
 			("p,point-size", "Display size of the points of the input point cloud.", cxxopts::value(gSettings.inputCloudPointSize)->default_value("2.0"))
 			("o,skip-optimization", "Skip fine optimization of face parameters completely.", cxxopts::value(gSettings.skipOptimization)->default_value("false"))
@@ -66,11 +70,24 @@ int main(int argc, char **argv) {
 		return -2;
 	}
 
-	std::string inputFace = gSettings.inputFile;
-	std::string inputFeatures = inputFace.substr(0, inputFace.length() - 3) + "points";
 	std::cout << "Loading input data ..." << std::endl;
-    std::cout << "    Input file: " << inputFace << std::endl;
-    Sensor inputSensor = VirtualSensor(inputFace, inputFeatures);
+	const Sensor* inputSensorPtr;
+    if (gSettings.useKinect) {
+        std::string outputFace = gSettings.kinectOutputFile;
+        std::string outputFeatures = outputFace.substr(0, outputFace.length() - 3) + "points";
+
+        std::cout << "    From sensor" << std::endl;
+        inputSensorPtr = new OpenNI2Sensor(outputFace, outputFeatures);
+    } else {
+        std::string inputFace = gSettings.inputFile;
+        std::string inputFeatures = inputFace.substr(0, inputFace.length() - 3) + "points";
+
+        std::cout << "    Input file: " << inputFace << std::endl;
+        inputSensorPtr = new VirtualSensor(inputFace, inputFeatures);
+    }
+    Sensor inputSensor = *inputSensorPtr;
+
+
 
     saveBitmap("rgbinput.bmp", inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
         y = inputSensor.m_cloud->height - y - 1;
