@@ -123,7 +123,7 @@ Eigen::Matrix3Xf FaceModel::computeNormals(const Eigen::VectorXf& vertices) cons
 		Eigen::Vector3f v1 = vertices.segment<3>(3 * indices(1));
 		Eigen::Vector3f v2 = vertices.segment<3>(3 * indices(2));
 
-		Eigen::Vector3f n = (v1-v0).cross(v2-v0).normalized();
+		Eigen::Vector3f n = -(v1-v0).cross(v2-v0).normalized();
 
 		normals.col(indices(0)) += n;
 		normals.col(indices(1)) += n;
