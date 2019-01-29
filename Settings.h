@@ -9,6 +9,7 @@ struct Settings {
 	unsigned int optimizationStride;
 	float regStrengthAlpha;
 	float regStrengthBeta;
+	float regStrengthGamma;
 	double initialStepSize;
 	double maxStepSize;
 };

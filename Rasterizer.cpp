@@ -26,6 +26,7 @@ public:
 void Rasterizer::compute(const FaceParameters& params) {
 	std::cout << "          Alpha: " << params.alpha.head<4>().transpose() << std::endl;
 	std::cout << "          Beta: " << params.beta.head<4>().transpose() << ", etc." << std::endl;
+    std::cout << "          Gamma: " << params.gamma.transpose() << std::endl;
 	std::cout << "          Rasterization: project ..." << std::flush;
 
 	Matrix3Xf projectedVertices;

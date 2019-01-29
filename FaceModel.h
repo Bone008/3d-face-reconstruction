@@ -60,8 +60,12 @@ public:
 		params.gamma(0) = .79f;
 		params.gamma(1) = .39f;
 		params.gamma(2) = -.34f;
-		params.gamma(3) = .79f;
-		params.gamma(4) = .79f;
+		params.gamma(3) = -.29f;
+		params.gamma(4) = -.11f;
+		params.gamma(5) = -.26f;
+		params.gamma(6) = -.16f;
+		params.gamma(7) = .56f;
+		params.gamma(8) = .21f;
 
 		/*
 		 * _L00 ("L00", Vector) = (.79, .44, .54, 1)

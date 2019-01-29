@@ -48,6 +48,7 @@ int main(int argc, char **argv) {
 			("S,opt-max-step", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize)->default_value("0.25"))
 			("r,opt-reg-alpha", "Regularization strength for alpha parameters.", cxxopts::value(gSettings.regStrengthAlpha)->default_value("1.0"))
 			("R,opt-reg-beta", "Regularization strength for beta parameters.", cxxopts::value(gSettings.regStrengthBeta)->default_value("1.0"))
+			("g,opt-reg-gamma", "Regularization strength for gamma parameters.", cxxopts::value(gSettings.regStrengthGamma)->default_value("1.0"))
 			;
 		options.parse_positional("input");
 		options.positional_help("[input]").show_positional_help();

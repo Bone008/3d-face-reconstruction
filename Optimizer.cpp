@@ -54,10 +54,10 @@ struct ResidualFunctor {
 			// Vertex position of average face.
 			Vector3T pos = model.m_averageMesh.vertices.segment(3 * vertexIndex, 3).cast<T>();
 			// Displace by applying alpha.
-			for (int j = 0; j < NUM_ALPHA_VEC; j++) {
+			/*for (int j = 0; j < NUM_ALPHA_VEC; j++) {
 				T std = T(model.m_shapeStd(j));
 				pos += model.m_shapeBasis.block(3 * vertexIndex, j, 3, 1).cast<T>() * std * alpha[j];
-			}
+			}*/
 
 			// Transform to world space.
 			vertexWorldPositions[i] = pose.topLeftCorner<3, 3>().cast<T>() * pos + pose.topRightCorner<3, 1>().cast<T>();
@@ -125,7 +125,7 @@ struct ResidualFunctor {
 
 		Vector3T inputCol = Vector3T(T(inputPoint.r), T(inputPoint.g), T(inputPoint.b));
 		T colorScaling = T(1.f / 255.f);
-		Vector3T colorDist = (inputCol - albedo + colorDelta.cast<T>()) / T(255.0f);
+		Vector3T colorDist = (inputCol - albedo) / T(255.0f);
 		residual[3] = colorDist(0);
 		residual[4] = colorDist(1);
 		residual[5] = colorDist(2);
@@ -148,7 +148,7 @@ private:
 struct RegularizerFunctor
 {
 	template <typename T>
-	bool operator()(T const* alpha, T const* beta, T* residual) const {
+	bool operator()(T const* alpha, T const* beta, T const* gamma, T* residual) const {
 		T factor = T(gSettings.regStrengthAlpha / NUM_ALPHA_VEC);
 		for (size_t i = 0; i < NUM_ALPHA_VEC; i++) {
 			residual[i] = factor * alpha[i];
@@ -156,6 +156,10 @@ struct RegularizerFunctor
 		factor = T(gSettings.regStrengthBeta / NUM_BETA_VEC);
 		for (size_t i = 0; i < NUM_BETA_VEC; i++) {
 			residual[NUM_ALPHA_VEC + i] = factor * beta[i];
+		}
+		factor = T(gSettings.regStrengthGamma / NUM_GAMMA_VEC);
+		for (size_t i = 0; i < NUM_GAMMA_VEC; i++) {
+			residual[NUM_ALPHA_VEC + NUM_BETA_VEC + i] = factor * gamma[i];
 		}
 		return true;
 	}
@@ -266,6 +270,18 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::array<double, NUM_BETA_VEC> beta{};
 	std::array<double, NUM_GAMMA_VEC> gamma{};
 
+	gamma[0] = 1.0f;
+
+	/*gamma[0] = .79f;
+	gamma[1] = .39f;
+	gamma[2] = -.34f;
+	gamma[3] = -.29f;
+	gamma[4] = -.11f;
+	gamma[5] = -.26f;
+	gamma[6] = -.16f;
+	gamma[7] = .56f;
+	gamma[8] = .21f;*/
+
 	{
 		std::cout << "Saving inputsensor.bmp ..." << std::endl;
 		int warnCount = 0;
@@ -335,8 +351,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	}
 
 	// Add regularization error term.
-	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_ALPHA_VEC + NUM_BETA_VEC, NUM_ALPHA_VEC, NUM_BETA_VEC>(new RegularizerFunctor());
-	problem.AddResidualBlock(regFunc, NULL, alpha.data(), beta.data());
+	ceres::CostFunction* regFunc = new ceres::AutoDiffCostFunction<RegularizerFunctor, NUM_ALPHA_VEC + NUM_BETA_VEC + NUM_GAMMA_VEC, NUM_ALPHA_VEC, NUM_BETA_VEC, NUM_GAMMA_VEC>(new RegularizerFunctor());
+	problem.AddResidualBlock(regFunc, NULL, alpha.data(), beta.data(), gamma.data());
 
 	std::cout << "Cost function has " << problem.NumResidualBlocks() << " residual blocks." << std::endl;
 
