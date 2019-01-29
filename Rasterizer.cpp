@@ -147,6 +147,7 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 							baryCoords(1) * vertexAlbedos.col(indices(1)).head<3>().cast<float>() +
 							baryCoords(2) * vertexAlbedos.col(indices(2)).head<3>().cast<float>();
 
+						//out.albedo = (-n + Vector3f(1.0f, 1.0f, 1.0f)) * 0.5f * 255.0f;// albedo * E;
 						out.albedo = albedo * E;
 
 						//out.albedo = Vector3f(E, E, E);
