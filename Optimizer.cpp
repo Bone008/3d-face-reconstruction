@@ -46,10 +46,10 @@ struct ResidualFunctor {
 			// Albedo of average face (ignore alpha).
 			vertexAlbedos[i] = model.m_averageMesh.vertexColors.col(vertexIndex).head<3>().cast<T>();
 			// Apply beta to albedo.
-			for (int j = 0; j < NUM_BETA_VEC; j++) {
+			/*for (int j = 0; j < NUM_BETA_VEC; j++) {
 				T std = T(model.m_albedoStd(j));
 				vertexAlbedos[i] += model.m_albedoBasis.block(3 * vertexIndex, j, 3, 1).cast<T>() * std * beta[j];
-			}
+			}*/
 
 			// Vertex position of average face.
 			Vector3T pos = model.m_averageMesh.vertices.segment(3 * vertexIndex, 3).cast<T>();
