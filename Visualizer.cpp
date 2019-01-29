@@ -2,6 +2,7 @@
 
 #include "Visualizer.h"
 #include "SwitchControl.h"
+#include "Settings.h"
 
 /**
  * PCL Viewport ids
@@ -121,6 +122,7 @@ void Visualizer::createViewports() {
     // add john
     if (m_johnPcl != 0) {
         m_viewer.addPointCloud<pcl::PointXYZRGB>(m_johnPcl, "john", m_vpJohn);
+		m_viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, gSettings.inputCloudPointSize, "john");
     }
 
     // add johnFeatures

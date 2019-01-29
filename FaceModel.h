@@ -37,6 +37,7 @@ public:
 
 	// Computes the vertex positions based on a set of parameters.
 	Eigen::VectorXf computeShape(const FaceParameters& params) const;
+	Eigen::VectorXf computeShape(const Eigen::VectorXf& alpha) const;
 	// Computes the vertex colors based on a set of parameters.
 	Eigen::Matrix4Xi computeColors(const FaceParameters& params) const;
 

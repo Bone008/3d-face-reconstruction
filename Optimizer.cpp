@@ -3,9 +3,9 @@
 #include "Optimizer.h"
 #include "OptimizerInit.h"
 #include "Rasterizer.h"
-#include "BMP.h"
-#include "utils.h"
 #include "Settings.h"
+#include "Sensor.h"
+#include "utils.h"
 
 using namespace Eigen;
 
@@ -233,47 +233,23 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
 FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor,
         std::function<void(const FaceParameters& params)> intermediateResultCallback) {
 	auto croppedCloud = cropCloudToHeadRegion(inputSensor.m_cloud, pose, model);
-
 	const uint32_t width = croppedCloud->width;
 	const uint32_t height = croppedCloud->height;
+
+	std::cout << "Saving inputsensor.bmp ..." << std::endl;
+	saveBitmap("inputsensor.bmp", width, height, [&](unsigned int x, unsigned int y) {
+		auto& p = (*croppedCloud)(x, y);
+		if (std::isnan(p.x) || std::isnan(p.y))
+			return Vector4i(0, 0, 0, 0);
+		else
+			return p.getRGBVector4i();
+	});
 
 	std::array<double, NUM_ALPHA_VEC> alpha{};
 	std::array<double, NUM_BETA_VEC> beta{};
 
 	VectorXf initialAlpha = initializeShapeParameters(model, pose, croppedCloud);
 	std::copy(initialAlpha.data(), initialAlpha.data() + NUM_ALPHA_VEC, alpha.begin());
-
-	{
-		std::cout << "Saving inputsensor.bmp ..." << std::endl;
-		int warnCount = 0;
-		BMP bmp(width, height);
-		for (unsigned int y = 0; y < height; y++) {
-			for (unsigned int x = 0; x < width; x++) {
-				auto& p = (*croppedCloud)(x, y);
-				if (std::isnan(p.x) || std::isnan(p.y))
-					continue;
-				Vector3f projectedPoint = inputSensor.m_cameraIntrinsics * Vector3f(p.x, p.y, p.z);
-				auto s = projectedPoint.head<2>() / projectedPoint.z();
-				int sx = int(s.x() + 0.5f);
-				int sy = int(s.y() + 0.5f);
-
-				if ((sx != x || sy != y) && warnCount++ < 10) {
-					std::cout << "    (" << x << "," << y << ") goes to (" << sx << "," << sy << ")" << std::endl;
-				}
-
-				if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
-					//int bmpIndex = (sy * width + sx);
-					int bmpIndex = (y * width + x);
-					bmp.data[4 * bmpIndex + 2] = p.r;
-					bmp.data[4 * bmpIndex + 1] = p.g;
-					bmp.data[4 * bmpIndex + 0] = p.b;
-					bmp.data[4 * bmpIndex + 3] = 255;
-				}
-			}
-		}
-		bmp.write("inputsensor.bmp");
-	}
-
 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
@@ -343,6 +319,20 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	std::cout << "Some final values of alpha: " << params.alpha.head<10>().transpose() << std::endl;
 	std::cout << "Some final values of beta: " << params.beta.head<10>().transpose() << std::endl;
+
+	// final composite image
+	saveBitmap("afinal.bmp", width, height, [&](unsigned int x, unsigned int y) {
+		y = height - y - 1;
+		const PixelData& synthPixel = rasterizer.pixelResults[y * width + x];
+		if (synthPixel.isValid) {
+			Vector4i col(0, 0, 0, 255);
+			col.head<3>() = (synthPixel.albedo - colorDelta).cast<int>().cwiseMax(0).cwiseMin(255);
+			return col;
+		}
+
+		const pcl::PointXYZRGBNormal& inputPixel = (*croppedCloud)(x, y);
+		return inputPixel.getRGBVector4i();
+	});
 
 	return params;
 }
