@@ -5,6 +5,8 @@ struct Settings {
 	std::string inputFile;
 	std::string kinectOutputFile;
 	bool useKinect;
+	double inputCloudPointSize;
+
 	bool skipOptimization;
 	
 	unsigned int optimizationStride;

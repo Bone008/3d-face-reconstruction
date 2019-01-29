@@ -65,8 +65,12 @@ FaceModel::FaceModel(const std::string& baseDir) {
 
 Eigen::VectorXf FaceModel::computeShape(const FaceParameters& params) const
 {
+	return computeShape(params.alpha);
+}
+Eigen::VectorXf FaceModel::computeShape(const Eigen::VectorXf& alpha) const
+{
 	assert(params.alpha.rows() == m_shapeBasis.cols() && "face parameter alpha has incorrect size");
-	auto& scaledAlpha = (params.alpha.array() * m_shapeStd.array()).matrix();
+	auto& scaledAlpha = (alpha.array() * m_shapeStd.array()).matrix();
 	return m_averageMesh.vertices + m_shapeBasis * scaledAlpha;
 }
 

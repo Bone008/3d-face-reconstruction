@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "Rasterizer.h"
+#include "FaceModel.h"
+#include "utils.h"
 
 using namespace Eigen;
 
@@ -56,8 +58,6 @@ void Rasterizer::rasterize(const Matrix3Xf& projectedVertices, const Matrix4Xi& 
 	std::fill(pixelResults.begin(), pixelResults.end(), PixelData());
 
 	std::cout << " rasterize ..." << std::flush;
-
-	ArrayXXf depthBuffer(frameSize.x(), frameSize.y());
 	depthBuffer.setConstant(std::numeric_limits<float>::infinity());
 
 	Vector3f L = Vector3f(0, 0, -1);
@@ -155,44 +155,41 @@ Vector3f Rasterizer::getAverageColor() {
 
 void Rasterizer::writeDebugImages() {
 	std::cout << " saving bmp ..." << std::flush;
-	BMP bmp(frameSize.x(), frameSize.y());
-	BMP bmpCol(frameSize.x(), frameSize.y());
+
 	// replace infinity values in buffer with 0
+	float maxDepth = -std::numeric_limits<float>::infinity();
+	float minDepth = std::numeric_limits<float>::infinity();
 	for (size_t i = 0; i < depthBuffer.size(); i++) {
-		if (std::isinf(depthBuffer.data()[i]))
-			depthBuffer.data()[i] = 0;
+		float d = depthBuffer.data()[i];
+		if (!std::isinf(d)) {
+			minDepth = std::min(minDepth, d);
+			maxDepth = std::max(maxDepth, d);
+		}
 	}
-	// TODO make scale respect minCoeff() as well for better color range
-	const float scale = depthBuffer.maxCoeff();
-	for (int i = 0; i < depthBuffer.size(); i++) {
-		Array4i depthCol;
-		if (depthBuffer.data()[i] == 0) {
-			depthCol = Array4i(0, 0, 30, 255);
-		}
-		else {
-			int c = int(depthBuffer.data()[i] / scale * 255);
-			depthCol = Array4i(c, c, c, 255);
-		}
-		bmp.data[4 * i + 2] = depthCol[0];
-		bmp.data[4 * i + 1] = depthCol[1];
-		bmp.data[4 * i + 0] = depthCol[2];
-		bmp.data[4 * i + 3] = depthCol[3];
 
-		Array4i col(0, 0, 0, 255);
-		auto& result = pixelResults[i];
-		if (result.isValid) {
-			col.head<3>() = result.albedo.cast<int>();
-		}
-
-		bmpCol.data[4 * i + 2] = col[0];
-		bmpCol.data[4 * i + 1] = col[1];
-		bmpCol.data[4 * i + 0] = col[2];
-		bmpCol.data[4 * i + 3] = col[3];
-	}
+	const float depthScale = maxDepth - minDepth;
+	const float depthOffset = -minDepth;
 
 	char filename[100];
 	sprintf(filename, "depthmap_%d.bmp", numCalls);
-	bmp.write(filename);
+	saveBitmap(filename, frameSize.x(), frameSize.y(), [this, depthScale, depthOffset](unsigned int x, unsigned int y) {
+		if (std::isinf(depthBuffer(x, y))) {
+			return Vector4i(0, 0, 70, 255);
+		}
+		else {
+			float scaledDepth = (depthBuffer(x, y) + depthOffset) / depthScale;
+			int c = int((1.0f - scaledDepth) * 255);
+			return Vector4i(c, c, c, 255);
+		}
+	});
+
 	sprintf(filename, "ecolmap_%d.bmp", numCalls);
-	bmpCol.write(filename);
+	saveBitmap(filename, frameSize.x(), frameSize.y(), [this](unsigned int x, unsigned int y) {
+		auto& result = pixelResults[y * frameSize.x() + x];
+		Vector4i col(0, 0, 0, 255);
+		if (result.isValid) {
+			col.head<3>() = result.albedo.cast<int>();
+		}
+		return col;
+	});
 }

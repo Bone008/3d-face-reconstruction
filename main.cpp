@@ -6,8 +6,6 @@
 #include "CoarseAlignment.h"
 #include "Optimizer.h"
 #include "utils.h"
-#include <pcl/io/io.h>
-#include <pcl/io/pcd_io.h>
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/features/normal_3d.h>
@@ -49,6 +47,8 @@ int main(int argc, char **argv) {
             ("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile)->default_value("../data/rgbd_face_dataset/006_00_cloud.pcd"))
             ("k,use-kinect", "Acquire point cloud from kinect sensor.", cxxopts::value(gSettings.useKinect)->default_value("false"))
             ("kinect-output", "Output point cloud file (*.pcl) when using kinect sensor.", cxxopts::value(gSettings.kinectOutputFile)->default_value("../data/sensor_output.pcd"))
+			("input", "Input point cloud file (*.pcl).", cxxopts::value(gSettings.inputFile)->default_value("../data/rgbd_face_dataset/006_00_cloud.pcd"))
+			("p,point-size", "Display size of the points of the input point cloud.", cxxopts::value(gSettings.inputCloudPointSize)->default_value("2.0"))
 			("o,skip-optimization", "Skip fine optimization of face parameters completely.", cxxopts::value(gSettings.skipOptimization)->default_value("false"))
 			("opt-stride", "Pixel stride for fine optimization (>= 1).", cxxopts::value(gSettings.optimizationStride)->default_value("2"))
 			("s,opt-step", "Initial trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize)->default_value("0.1"))

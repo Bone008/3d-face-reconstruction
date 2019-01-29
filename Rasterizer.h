@@ -1,6 +1,6 @@
 #pragma once
-#include "FaceModel.h"
-#include "BMP.h"
+class FaceModel;
+struct FaceParameters;
 
 // Output of the rasterizer for a single pixel.
 // Does not include the actual color & depth output (what a typical rasterizer would compute),
