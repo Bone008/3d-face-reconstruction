@@ -6,6 +6,7 @@
 
 using namespace Eigen;
 
+const unsigned int NUM_LINEAR_ITERATIONS = 5;
 const double MAX_CORRESPONDENCE_DISTANCE = 0.01;
 const int NUM_LINEAR_ALPHA_DIM = 40;
 
@@ -64,18 +65,17 @@ std::vector<Match> findCorrespondences(pcl::PointCloud<pcl::PointXYZRGBNormal>::
 	return matches;
 }
 
-
-VectorXf initializeShapeParameters(const FaceModel& model, const Eigen::Matrix4f& pose, pcl::PointCloud<pcl::PointXYZRGBNormal>::ConstPtr inputCloud) {
-	std::cout << "Param initialization ..." << std::endl;
-	VectorXf alpha = VectorXf::Zero(model.getNumEigenVec());
+VectorXf linearOptimizeShape(const FaceModel& model, const Eigen::Matrix4f& pose, pcl::PointCloud<pcl::PointXYZRGBNormal>::ConstPtr inputCloud, const VectorXf& initialAlpha) {
+	VectorXf alpha = initialAlpha;
 
 	// Transform input cloud to model space. In the rest of the project, the model
 	// is transformed to the input, but doing it this way makes the linear equation simpler later.
 	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr localInputCloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
 	pcl::transformPointCloudWithNormals(*inputCloud, *localInputCloud, pose.inverse());
 
-	Matrix3Xf modelNormals = model.computeNormals(model.m_averageMesh.vertices);
-	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr modelCloud = pointsToCloud(model.m_averageMesh.vertices, modelNormals);
+	VectorXf modelVertices = model.computeShape(alpha);
+	Matrix3Xf modelNormals = model.computeNormals(modelVertices);
+	pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr modelCloud = pointsToCloud(modelVertices, modelNormals);
 
 	std::vector<Match> matches = findCorrespondences(modelCloud, localInputCloud);
 	if (matches.empty()) {
@@ -109,6 +109,17 @@ VectorXf initializeShapeParameters(const FaceModel& model, const Eigen::Matrix4f
 	std::cout << "    final error L2 norm: " << (A * leastSquaresAlpha - b).norm() << std::endl;
 
 	alpha.head<NUM_LINEAR_ALPHA_DIM>() = leastSquaresAlpha;
-	std::cout << "  some alphas: " << alpha.head<5>().transpose() << std::endl;
+	return alpha;
+}
+
+VectorXf initializeShapeParameters(const FaceModel& model, const Eigen::Matrix4f& pose, pcl::PointCloud<pcl::PointXYZRGBNormal>::ConstPtr inputCloud) {
+	std::cout << "Param initialization ..." << std::endl;
+	VectorXf alpha = VectorXf::Zero(model.getNumEigenVec());
+
+	for (unsigned int i = 0; i < NUM_LINEAR_ITERATIONS; i++) {
+		alpha = linearOptimizeShape(model, pose, inputCloud, alpha);
+		std::cout << "  some alphas (iter " << (i+1) << "): " << alpha.head<5>().transpose() << std::endl;
+	}
+
 	return alpha;
 }
