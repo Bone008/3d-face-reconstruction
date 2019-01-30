@@ -12,8 +12,8 @@ using namespace Eigen;
 // Constant to allow better compile-time optimization.
 // If this is smaller than the number of actual eigen vectors (160),
 // only the first ones will be optimized over.
-const unsigned int NUM_ALPHA_VEC = 160;
-const unsigned int NUM_BETA_VEC = 80;
+const unsigned int NUM_ALPHA_VEC = 60;
+const unsigned int NUM_BETA_VEC = 60;
 
 const unsigned int NUM_DENSE_RESIDUALS = 4 + 3;
 
