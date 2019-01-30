@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
 	}
 
 	std::cout << "Loading input data ..." << std::endl;
-	const Sensor* inputSensorPtr;
+	Sensor* inputSensorPtr;
     if (gSettings.useKinect) {
         std::string outputFace = gSettings.kinectOutputFile;
         std::string outputFeatures = outputFace.substr(0, outputFace.length() - 3) + "points";
@@ -84,29 +84,23 @@ int main(int argc, char **argv) {
         std::cout << "    Input file: " << inputFace << std::endl;
         inputSensorPtr = new VirtualSensor(inputFace, inputFeatures);
     }
-    Sensor inputSensor = *inputSensorPtr;
+    Sensor& inputSensor = *inputSensorPtr;
 
 
-
-    saveBitmap("rgbinput.bmp", inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
+	std::string inputPclFile = (gSettings.useKinect ? gSettings.kinectOutputFile : gSettings.inputFile);
+	std::string inputRgbFile = inputPclFile.substr(0, inputPclFile.length() - 4) + "_color.bmp";
+	std::string inputDepthFile = inputPclFile.substr(0, inputPclFile.length() - 4) + "_depth.bmp";
+	std::cout << "Saving input RGB to " << inputRgbFile << " ..." << std::endl;
+    saveBitmap(inputRgbFile.c_str(), inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
         y = inputSensor.m_cloud->height - y - 1;
 
         const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
         return inputPixel.getRGBVector4i();
     });
 
+	std::cout << "Saving input depth to " << inputDepthFile << " ..." << std::endl;
     float maxDepth = 0.5f;
-    /*int inW = inputSensor.m_cloud->width;
-    int inH = inputSensor.m_cloud->height;
-    for (int y=0;y<inH;++y) {
-        for (int x=0;x<inW;++x) {
-            const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
-            if (inputPixel.z > maxDepth)
-                maxDepth = inputPixel.z;
-        }
-    }*/
-
-    saveBitmap("dinput.bmp", inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
+    saveBitmap(inputDepthFile.c_str(), inputSensor.m_cloud->width, inputSensor.m_cloud->height, [&](unsigned int x, unsigned int y) {
         y = inputSensor.m_cloud->height - y - 1;
 
         const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
@@ -123,31 +117,36 @@ int main(int argc, char **argv) {
     visualizer.setJohnFeatures(getFeaturePointPcl(inputSensor.m_featurePoints));
     visualizer.runOnce();
 
-    FaceModel* model;
-    FaceParameters paramsDefault;
-    FaceParameters params;
+    FaceModel* model = nullptr;
+	OptimizerOutput* optimizerData = nullptr;
+    
+	// Updated by the optimizer thread during optimization.
+	FaceParameters params;
+    // Modified by renderPcl() depending on settings controlled by user input.
+	FaceParameters currentParams;
+
     Eigen::Matrix4f poseWithoutICP;
     Eigen::Matrix4f pose;
-
-    FaceParameters currentParams = params;
     Eigen::Matrix4f currentPose = pose;
+
     bool optimized = true;
+    bool albedoOff = false;
     int currentAge = 0;
     int currentWeight = 0;
     int currentGender = 0;
-    bool albedoOff = false;
 
 
     auto renderPcl = [&]() {
-        if (!optimized)
-            currentParams = model->createDefaultParameters();
+		if (model == nullptr)
+			return; // Model not loaded yet.
+        
+		currentParams = (optimized ? params : model->createDefaultParameters());
         if (albedoOff)
             currentParams.beta.setZero();
+        currentParams = model->computeShapeAttribute(currentParams, currentAge, currentWeight, currentGender);
 
-        FaceParameters attributeParams = model->computeShapeAttribute(currentParams, currentAge, currentWeight, currentGender);
-
-        Eigen::VectorXf finalShape = model->computeShape(attributeParams);
-        Eigen::Matrix4Xi finalColors = model->computeColors(attributeParams);
+        Eigen::VectorXf finalShape = model->computeShape(currentParams);
+        Eigen::Matrix4Xi finalColors = model->computeColors(currentParams);
 
         // visualize final reconstruction (Steve)
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
@@ -156,16 +155,28 @@ int main(int argc, char **argv) {
     };
 
 
-    auto setAndRenderPcl = [&](FaceParameters params) {
-        currentParams = params;
-        renderPcl();
-    };
+	auto saveComposite = [&]() {
+		if (optimizerData == nullptr) {
+			// Optimizer hasn't completed yet, so no rasterized output is available.
+			std::cout << "Cannot save composite image because optimizer has not finished." << std::endl;
+			return;
+		}
+
+		std::string filename = (gSettings.useKinect ? gSettings.kinectOutputFile : gSettings.inputFile);
+		filename = filename.substr(0, filename.length() - 4) + "_composite.bmp";
+		std::cout << "Saving composite image to " << filename << " ..." << std::endl;
+		saveCompositeImage(filename.c_str(), *inputSensor.m_cloud, *optimizerData, currentParams);
+	};
 
     boost::thread optimizingThread([&]() {
+		auto setAndRenderPcl = [&](const FaceParameters& newParams) {
+			params = newParams;
+			renderPcl();
+		};
+
         // load face model (Steve)
         std::cout << "Loading face model ..." << std::endl;
         model = new FaceModel(baseModelDir);
-        paramsDefault = model->createDefaultParameters();
         visualizer.setSteveVertices(trianglesToVertexList(model->m_averageMesh.triangles));
 
         std::cout << "Coarse alignment ..." << std::endl;
@@ -180,7 +191,12 @@ int main(int argc, char **argv) {
         }
         else {
             std::cout << "Optimizing parameters ..." << std::endl;
-            params = optimizeParameters(*model, pose, inputSensor, setAndRenderPcl);
+			OptimizerOutput* wipData = new OptimizerOutput;
+            params = optimizeParameters(*model, pose, inputSensor, *wipData, setAndRenderPcl);
+			
+			// After optimization is completed, save state to shared pointer.
+			optimizerData = wipData;
+			saveComposite();
         }
 
         std::cout << "Done!" << std::endl;
@@ -226,6 +242,12 @@ int main(int argc, char **argv) {
         renderPcl();
     });
     visualizer.addSwitch(scAttribute);
+	
+	std::vector<std::string> dummyStates{ "save composite" };
+	SwitchControl* scSaveImage = new SwitchControl(dummyStates, "", "s", [&](auto dummy, auto dummy2) {
+		saveComposite();
+	});
+	visualizer.addSwitch(scSaveImage);
 
     visualizer.run();
     optimizingThread.join();

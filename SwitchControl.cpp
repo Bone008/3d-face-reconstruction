@@ -93,6 +93,9 @@ void SwitchControl::addToVisualizer(pcl::visualization::PCLVisualizer &viewer, i
                         else if (keyEvent.getKeySym()== "Right")
                             modDir = +1;
 
+						if (keyEvent.isShiftPressed())
+							modDir *= 10;
+
                         if (dir != 0 || modDir != 0) {
                             m_props[m_selectedProp] = m_props[m_selectedProp] + modDir;
 

@@ -231,6 +231,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cropCloudToHeadRegion(
 }
 
 FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const Sensor& inputSensor,
+		OptimizerOutput& outputInfo,
         std::function<void(const FaceParameters& params)> intermediateResultCallback) {
 	auto croppedCloud = cropCloudToHeadRegion(inputSensor.m_cloud, pose, model);
 	const uint32_t width = croppedCloud->width;
@@ -253,7 +254,8 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 
 	// Set up the rasterizer, which will be called once for each Ceres iteration and 
 	// which updates rasterResults with the current per-pixel rendering results.
-	Rasterizer rasterizer({ width, height }, model, pose, inputSensor.m_cameraIntrinsics);
+	outputInfo.rasterizer.reset(new Rasterizer({ width, height }, model, pose, inputSensor.m_cameraIntrinsics));
+	Rasterizer& rasterizer = *outputInfo.rasterizer;
 	CallbackFunctor rasterizerCallback(rasterizer.model, alpha.data(), beta.data(), [&](FaceParameters params) {
         rasterizer.compute(params);
     });
@@ -270,6 +272,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	Vector3f modelAverageCol = rasterizer.getAverageColor();
 	// Contains the RGB difference due to lighting from the input face to the synthetic face.
 	Vector3f colorDelta = modelAverageCol - inputAverageCol;
+	outputInfo.colorDelta = colorDelta;
 
 	std::cout << "| input average: " << inputAverageCol.transpose() << std::endl;
 	std::cout << "| model average: " << modelAverageCol.transpose() << std::endl;
@@ -320,19 +323,25 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	std::cout << "Some final values of alpha: " << params.alpha.head<10>().transpose() << std::endl;
 	std::cout << "Some final values of beta: " << params.beta.head<10>().transpose() << std::endl;
 
-	// final composite image
-	saveBitmap("afinal.bmp", width, height, [&](unsigned int x, unsigned int y) {
-		y = height - y - 1;
-		const PixelData& synthPixel = rasterizer.pixelResults[y * width + x];
+	return params;
+}
+
+void saveCompositeImage(const char* filename, const pcl::PointCloud<pcl::PointXYZRGB>& inputCloud, OptimizerOutput& state, const FaceParameters& params) {
+	// Rerender the image with the provided params.
+	state.rasterizer->compute(params);
+
+	// Save composition to file.
+	saveBitmap(filename, inputCloud.width, inputCloud.height, [&](unsigned int x, unsigned int y) {
+		// flip vertically
+		y = inputCloud.height - y - 1;
+		const PixelData& synthPixel = state.rasterizer->pixelResults[y * inputCloud.width + x];
 		if (synthPixel.isValid) {
 			Vector4i col(0, 0, 0, 255);
-			col.head<3>() = (synthPixel.albedo - colorDelta).cast<int>().cwiseMax(0).cwiseMin(255);
+			col.head<3>() = (synthPixel.albedo - state.colorDelta).cast<int>().cwiseMax(0).cwiseMin(255);
 			return col;
 		}
 
-		const pcl::PointXYZRGBNormal& inputPixel = (*croppedCloud)(x, y);
+		const pcl::PointXYZRGB& inputPixel = inputCloud(x, y);
 		return inputPixel.getRGBVector4i();
 	});
-
-	return params;
 }
