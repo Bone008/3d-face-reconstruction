@@ -6,4 +6,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr pointsToCloud(const Eigen::VectorXf
 
 std::vector<pcl::Vertices> trianglesToVertexList(const Eigen::Matrix3Xi& triangles);
 
-void saveBitmap(const char* filename, int width, int height, std::function<Eigen::Vector4i(unsigned int x, unsigned int y)> pixelColorProvider);
+// Saves a BMP image using the colors provided by a callback (x, y) --> RGB.
+void saveBitmap(const char* filename, int width, int height, std::function<Eigen::Vector3i(unsigned int x, unsigned int y)> pixelColorProvider);
+// Saves a BMP image using the colors provided by a callback (x, y) --> RGBA.
+void saveBitmapAlpha(const char* filename, int width, int height, std::function<Eigen::Vector4i(unsigned int x, unsigned int y)> pixelColorProvider);

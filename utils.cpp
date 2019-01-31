@@ -65,12 +65,28 @@ std::vector<pcl::Vertices> trianglesToVertexList(const Eigen::Matrix3Xi& triangl
 }
 
 
-// Saves a BMP image using the colors provided by a callback (x, y) --> RGBA.
-void saveBitmap(const char* filename, int width, int height, std::function<Eigen::Vector4i(unsigned int x, unsigned int y)> pixelColorProvider) {
+// Saves a BMP image using the colors provided by a callback (x, y) --> RGB.
+void saveBitmap(const char* filename, int width, int height, std::function<Eigen::Vector3i(unsigned int x, unsigned int y)> pixelColorProvider) {
 	BMP bmp(width, height);
 	for (unsigned int y = 0; y < height; y++) {
 		for (unsigned int x = 0; x < width; x++) {
-			Eigen::Vector4i color = pixelColorProvider(x, y);
+			Eigen::Vector3i color = pixelColorProvider(x, y).cwiseMax(0).cwiseMin(255);
+			// BMP stores data in BGRA order, the provider returns RGBA.
+			bmp.data[4 * (y * width + x) + 2] = color(0);
+			bmp.data[4 * (y * width + x) + 1] = color(1);
+			bmp.data[4 * (y * width + x) + 0] = color(2);
+			bmp.data[4 * (y * width + x) + 3] = 255;
+		}
+	}
+	bmp.write(filename);
+}
+
+// Saves a BMP image using the colors provided by a callback (x, y) --> RGBA.
+void saveBitmapAlpha(const char* filename, int width, int height, std::function<Eigen::Vector4i(unsigned int x, unsigned int y)> pixelColorProvider) {
+	BMP bmp(width, height);
+	for (unsigned int y = 0; y < height; y++) {
+		for (unsigned int x = 0; x < width; x++) {
+			Eigen::Vector4i color = pixelColorProvider(x, y).cwiseMax(0).cwiseMin(255);
 			// BMP stores data in BGRA order, the provider returns RGBA.
 			bmp.data[4 * (y * width + x) + 2] = color(0);
 			bmp.data[4 * (y * width + x) + 1] = color(1);

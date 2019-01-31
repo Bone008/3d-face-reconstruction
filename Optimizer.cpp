@@ -238,7 +238,7 @@ FaceParameters optimizeParameters(FaceModel& model, const Matrix4f& pose, const 
 	const uint32_t height = croppedCloud->height;
 
 	std::cout << "Saving inputsensor.bmp ..." << std::endl;
-	saveBitmap("inputsensor.bmp", width, height, [&](unsigned int x, unsigned int y) {
+	saveBitmapAlpha("inputsensor.bmp", width, height, [&](unsigned int x, unsigned int y) {
 		auto& p = (*croppedCloud)(x, y);
 		if (std::isnan(p.x) || std::isnan(p.y))
 			return Vector4i(0, 0, 0, 0);
@@ -336,12 +336,10 @@ void saveCompositeImage(const char* filename, const pcl::PointCloud<pcl::PointXY
 		y = inputCloud.height - y - 1;
 		const PixelData& synthPixel = state.rasterizer->pixelResults[y * inputCloud.width + x];
 		if (synthPixel.isValid) {
-			Vector4i col(0, 0, 0, 255);
-			col.head<3>() = (synthPixel.albedo - state.colorDelta).cast<int>().cwiseMax(0).cwiseMin(255);
-			return col;
+			return (Vector3i)(synthPixel.albedo - state.colorDelta).cast<int>();
 		}
 
 		const pcl::PointXYZRGB& inputPixel = inputCloud(x, y);
-		return inputPixel.getRGBVector4i();
+		return inputPixel.getRGBVector3i();
 	});
 }

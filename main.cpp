@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
         y = inputSensor.m_cloud->height - y - 1;
 
         const pcl::PointXYZRGB& inputPixel = (*inputSensor.m_cloud)(x, y);
-        return inputPixel.getRGBVector4i();
+        return inputPixel.getRGBVector3i();
     });
 
 	std::cout << "Saving input depth to " << inputDepthFile << " ..." << std::endl;
@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
             depth = 0;
         else if (depth > 255)
             depth = 255;
-        return Eigen::Vector4i(depth, depth, depth, 255);
+        return Eigen::Vector3i(depth, depth, depth);
     });
 
 	// visualize input point cloud (John)
@@ -200,11 +200,11 @@ int main(int argc, char **argv) {
 			
 			// After optimization is completed, save state to shared pointer.
 			optimizerData = wipData;
-			saveComposite();
         }
 
         std::cout << "Done!" << std::endl;
         setAndRenderPcl(params);
+		saveComposite();
     });
 
     // add switch (optimized/default)

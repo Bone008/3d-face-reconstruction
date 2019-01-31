@@ -174,22 +174,21 @@ void Rasterizer::writeDebugImages() {
 	sprintf(filename, "depthmap_%d.bmp", numCalls);
 	saveBitmap(filename, frameSize.x(), frameSize.y(), [this, depthScale, depthOffset](unsigned int x, unsigned int y) {
 		if (std::isinf(depthBuffer(x, y))) {
-			return Vector4i(0, 0, 70, 255);
+			return Vector3i(0, 0, 70);
 		}
 		else {
 			float scaledDepth = (depthBuffer(x, y) + depthOffset) / depthScale;
 			int c = int((1.0f - scaledDepth) * 255);
-			return Vector4i(c, c, c, 255);
+			return Vector3i(c, c, c);
 		}
 	});
 
 	sprintf(filename, "ecolmap_%d.bmp", numCalls);
 	saveBitmap(filename, frameSize.x(), frameSize.y(), [this](unsigned int x, unsigned int y) {
 		auto& result = pixelResults[y * frameSize.x() + x];
-		Vector4i col(0, 0, 0, 255);
-		if (result.isValid) {
-			col.head<3>() = result.albedo.cast<int>();
-		}
-		return col;
+		if (result.isValid)
+			return (Vector3i)result.albedo.cast<int>();
+		else
+			return (Vector3i)Vector3i::Zero();
 	});
 }
