@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
     Eigen::Matrix4f pose;
     Eigen::Matrix4f currentPose = pose;
 
-    bool optimized = true;
+    bool shapeOff = false;
     bool albedoOff = false;
     int currentAge = 0;
     int currentWeight = 0;
@@ -140,7 +140,9 @@ int main(int argc, char **argv) {
 		if (model == nullptr)
 			return; // Model not loaded yet.
         
-		currentParams = (optimized ? params : model->createDefaultParameters());
+		currentParams = params;
+		if (shapeOff)
+			currentParams.alpha.setZero();
         if (albedoOff)
             currentParams.beta.setZero();
         currentParams = model->computeShapeAttribute(currentParams, currentAge, currentWeight, currentGender);
@@ -177,6 +179,7 @@ int main(int argc, char **argv) {
         // load face model (Steve)
         std::cout << "Loading face model ..." << std::endl;
         model = new FaceModel(baseModelDir);
+		params = model->createDefaultParameters();
         visualizer.setSteveVertices(trianglesToVertexList(model->m_averageMesh.triangles));
 
         std::cout << "Coarse alignment ..." << std::endl;
@@ -206,32 +209,29 @@ int main(int argc, char **argv) {
     // add switch (optimized/default)
     std::vector<std::string> states;
 	states.emplace_back("Optimized");
+	states.emplace_back("Optimized (only shape)");
+	states.emplace_back("Optimized (only albedo)");
 	states.emplace_back("Default");
     SwitchControl* scOptim = new SwitchControl(states, "", "Tab", [&](int state, const std::vector<int>&props) {
-        optimized = (state == 0);
+		switch (state) {
+		case 0: shapeOff = false; albedoOff = false; break;
+		case 1: shapeOff = false; albedoOff = true; break;
+		case 2: shapeOff = true; albedoOff = false; break;
+		case 3: shapeOff = true; albedoOff = true; break;
+		}
         renderPcl();
     });
 	visualizer.addSwitch(scOptim);
 
 	// add switch (icp on/off)
     std::vector<std::string> statesICP;
-    statesICP.emplace_back("with ICP");
-    statesICP.emplace_back("without ICP");
+    statesICP.emplace_back("Pose with ICP");
+    statesICP.emplace_back("Pose without ICP");
     SwitchControl* scICP = new SwitchControl(statesICP, "", "i", [&](int state, const std::vector<int>&props) {
         currentPose = (state == 0 ? pose : poseWithoutICP);
         renderPcl();
     });
     visualizer.addSwitch(scICP);
-
-    // add switch (albedo on/off)
-    std::vector<std::string> statesAlbedo;
-    statesAlbedo.emplace_back("with albedo");
-    statesAlbedo.emplace_back("without albedo");
-    SwitchControl* scAlbedo = new SwitchControl(statesAlbedo, "", "space", [&](int state, const std::vector<int>&props) {
-        albedoOff = (state != 0);
-        renderPcl();
-    });
-    visualizer.addSwitch(scAlbedo);
 
     // add switch (age/gender/weight)
     std::vector<std::string> statesAttribute;
