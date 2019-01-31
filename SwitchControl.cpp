@@ -42,7 +42,7 @@ void SwitchControl::addToVisualizer(pcl::visualization::PCLVisualizer &viewer, i
         int i = 0;
         for (auto& state : propertyNames) {
             viewer.addText(
-                    (i == 0 ? ">" : " ") + state + ": " + std::to_string(m_props[i]),
+                    (i == m_selectedProp ? ">" : " ") + state + ": " + std::to_string(m_props[i]),
                     200, maxY - (i + 1) * c_textHeight,
                     0, 1, 0,
                     id2Str + "option " + std::to_string(i),
@@ -62,7 +62,7 @@ void SwitchControl::addToVisualizer(pcl::visualization::PCLVisualizer &viewer, i
         int i = 0;
         for (auto &state : m_states) {
             viewer.addText(
-                    (i == 0 ? ">" : " ") + state,
+                    (i == m_currentState ? ">" : " ") + state,
                     30, maxY - (i + 1) * c_textHeight,
                     0, 1, 0,
                     idStr + "option " + std::to_string(i),
