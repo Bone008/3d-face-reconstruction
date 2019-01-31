@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
             ("kinect-output", "Output point cloud file (*.pcl) when using kinect sensor.", cxxopts::value(gSettings.kinectOutputFile)->default_value("../data/sensor_output.pcd"))
 			("p,point-size", "Display size of the points of the input point cloud.", cxxopts::value(gSettings.inputCloudPointSize)->default_value("2.0"))
 			("o,skip-optimization", "Skip fine optimization of face parameters completely.", cxxopts::value(gSettings.skipOptimization)->default_value("false"))
-			("n,num-linear-iterations", "Number of initialization iterations of linear shape solver (>= 0).", cxxopts::value(gSettings.optimizationStride)->default_value("5"))
+			("n,num-linear-iterations", "Number of initialization iterations of linear shape solver (>= 0).", cxxopts::value(gSettings.numLinearIterations)->default_value("5"))
 			("opt-stride", "Pixel stride for fine optimization (>= 1).", cxxopts::value(gSettings.optimizationStride)->default_value("2"))
 			("s,opt-step", "Initial trust region size of the optimization.", cxxopts::value(gSettings.initialStepSize)->default_value("0.1"))
 			("S,opt-max-step", "Maximum trust region size of the optimization.", cxxopts::value(gSettings.maxStepSize)->default_value("0.25"))
