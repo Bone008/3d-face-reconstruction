@@ -9,6 +9,7 @@ struct Settings {
 
 	bool skipOptimization;
 	
+	unsigned int numLinearIterations;
 	unsigned int optimizationStride;
 	float regStrengthAlpha;
 	float regStrengthBeta;

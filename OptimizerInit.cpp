@@ -1,12 +1,12 @@
 #include "stdafx.h"
 #include "OptimizerInit.h"
 #include "FaceModel.h"
+#include "Settings.h"
 #include "utils.h"
 #include <pcl/kdtree/kdtree_flann.h>
 
 using namespace Eigen;
 
-const unsigned int NUM_LINEAR_ITERATIONS = 5;
 const double MAX_CORRESPONDENCE_DISTANCE = 0.01;
 const int NUM_LINEAR_ALPHA_DIM = 40;
 
@@ -116,7 +116,7 @@ VectorXf initializeShapeParameters(const FaceModel& model, const Eigen::Matrix4f
 	std::cout << "Param initialization ..." << std::endl;
 	VectorXf alpha = VectorXf::Zero(model.getNumEigenVec());
 
-	for (unsigned int i = 0; i < NUM_LINEAR_ITERATIONS; i++) {
+	for (unsigned int i = 0; i < gSettings.numLinearIterations; i++) {
 		alpha = linearOptimizeShape(model, pose, inputCloud, alpha);
 		std::cout << "  some alphas (iter " << (i+1) << "): " << alpha.head<5>().transpose() << std::endl;
 	}
