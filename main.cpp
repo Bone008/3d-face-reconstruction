@@ -132,6 +132,7 @@ int main(int argc, char **argv) {
 
     bool shapeOff = false;
     bool albedoOff = false;
+	bool whiteColor = false;
     int currentAge = 0;
     int currentWeight = 0;
     int currentGender = 0;
@@ -150,6 +151,9 @@ int main(int argc, char **argv) {
 
         Eigen::VectorXf finalShape = model->computeShape(currentParams);
         Eigen::Matrix4Xi finalColors = model->computeColors(currentParams);
+
+		if (whiteColor)
+			finalColors.setConstant(255);
 
         // visualize final reconstruction (Steve)
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformedCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
@@ -211,14 +215,16 @@ int main(int argc, char **argv) {
     std::vector<std::string> states;
 	states.emplace_back("Optimized");
 	states.emplace_back("Optimized (only shape)");
+	states.emplace_back("Optimized (white shape)");
 	states.emplace_back("Optimized (only albedo)");
 	states.emplace_back("Default");
     SwitchControl* scOptim = new SwitchControl(states, "", "Tab", [&](int state, const std::vector<int>&props) {
 		switch (state) {
-		case 0: shapeOff = false; albedoOff = false; break;
-		case 1: shapeOff = false; albedoOff = true; break;
-		case 2: shapeOff = true; albedoOff = false; break;
-		case 3: shapeOff = true; albedoOff = true; break;
+		case 0: shapeOff = false; albedoOff = false; whiteColor = false; break;
+		case 1: shapeOff = false; albedoOff = true;  whiteColor = false; break;
+		case 2: shapeOff = false; albedoOff = true;  whiteColor = true;  break;
+		case 3: shapeOff = true;  albedoOff = false; whiteColor = false; break;
+		case 4: shapeOff = true;  albedoOff = true;  whiteColor = false; break;
 		}
         renderPcl();
     });
