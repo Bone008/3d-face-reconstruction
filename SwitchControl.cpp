@@ -111,11 +111,11 @@ void SwitchControl::addToVisualizer(pcl::visualization::PCLVisualizer &viewer, i
                             m_callee(m_currentState, m_props);
                         }
                     } else {
-                        dir = 0;
                         if (keyEvent.getKeySym() == m_keyBackward)
                             dir = -1;
-                        else if (keyEvent.getKeySym() == m_keyForward)
-                            dir = +1;
+						// Note that tolower doesn't work for non-ASCII characters, because C++ is horrible at it.
+                        else if (keyEvent.getKeySym() == m_keyForward || std::tolower(keyEvent.getKeySym()[0]) == m_keyForward[0])
+                            dir = (keyEvent.isShiftPressed() ? -1 : +1);
                         else
                             return;
 
